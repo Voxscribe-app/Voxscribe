@@ -1,0 +1,51 @@
+# Rust build output
+/target/
+/target-*/
+
+# ONNX Runtime binaries fetched by the ort build script (hundreds of MB)
+/.cache/
+
+
+
+/scripts
+
+# Cargo registry credentials. The project config is kept.
+/.cargo/*
+!/.cargo/config.toml
+
+# Model weights are downloaded at runtime, never committed
+*.onnx
+*.onnx.data
+*.nemo
+*.safetensors
+*.gguf
+*.ggml
+*.bin
+
+# Bearer tokens for the remote ASR server
+*.token
+token
+secrets.toml
+
+# Backups written by `duskr migrate`
+*.bak
+*.bak-*
+
+# Python NeMo worker environment
+__pycache__/
+*.py[cod]
+.venv/
+
+# Captured audio and scratch recordings
+*.wav
+*.pcm
+
+# Logs
+*.log
+
+# Editor and OS noise
+/.idea/
+/.vscode/
+*.swp
+*~
+.DS_Store

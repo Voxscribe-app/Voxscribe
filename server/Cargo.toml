@@ -1,0 +1,24 @@
+[package]
+name = "duskr-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Remote Parakeet server for Duskr"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+axum = "0.8"
+clap = { version = "4.5", features = ["derive", "env"] }
+dirs = "6.0"
+futures-util = "0.3"
+libc = "0.2"
+ort = { version = "=2.0.0-rc.12", default-features = false, features = ["cuda", "std", "ndarray"] }
+parakeet-rs = { version = "=0.3.6", default-features = false, features = ["cuda", "ort-defaults"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "process", "sync", "io-util", "signal", "fs"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
