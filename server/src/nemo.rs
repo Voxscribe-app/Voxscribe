@@ -122,23 +122,42 @@ pub fn setup(paths: &Paths, force: bool) -> Result<()> {
             .arg(&paths.venv_python)
             .args(["nemo-toolkit[asr]", "soundfile"]))?;
     } else {
-        run(std::process::Command::new(&paths.venv_python)
-            .args(["-m", "pip", "install", "--upgrade", "pip"]))?;
-        run(std::process::Command::new(&paths.venv_python)
-            .args(["-m", "pip", "install", "torch", "torchaudio", "--index-url", CUDA_126_INDEX]))?;
-        run(std::process::Command::new(&paths.venv_python)
-            .args(["-m", "pip", "install", "nemo-toolkit[asr]", "soundfile"]))?;
+        run(std::process::Command::new(&paths.venv_python).args([
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+        ]))?;
+        run(std::process::Command::new(&paths.venv_python).args([
+            "-m",
+            "pip",
+            "install",
+            "torch",
+            "torchaudio",
+            "--index-url",
+            CUDA_126_INDEX,
+        ]))?;
+        run(std::process::Command::new(&paths.venv_python).args([
+            "-m",
+            "pip",
+            "install",
+            "nemo-toolkit[asr]",
+            "soundfile",
+        ]))?;
     }
 
-    run(std::process::Command::new(&paths.venv_python).arg("-c").arg(concat!(
-        "import torch; ",
-        "print('torch:', torch.__version__); ",
-        "print('torch CUDA:', torch.version.cuda); ",
-        "assert torch.cuda.is_available(), 'CUDA unavailable'; ",
-        "print('GPU:', torch.cuda.get_device_name(0)); ",
-        "print('capability:', torch.cuda.get_device_capability(0)); ",
-        "print('arch list:', torch.cuda.get_arch_list())"
-    )))?;
+    run(std::process::Command::new(&paths.venv_python)
+        .arg("-c")
+        .arg(concat!(
+            "import torch; ",
+            "print('torch:', torch.__version__); ",
+            "print('torch CUDA:', torch.version.cuda); ",
+            "assert torch.cuda.is_available(), 'CUDA unavailable'; ",
+            "print('GPU:', torch.cuda.get_device_name(0)); ",
+            "print('capability:', torch.cuda.get_device_capability(0)); ",
+            "print('arch list:', torch.cuda.get_arch_list())"
+        )))?;
 
     println!("NeMo environment ready at {}", paths.data_dir.display());
     Ok(())

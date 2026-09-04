@@ -149,6 +149,7 @@ enum ProtocolArg {
     Auto,
     Pcm,
     Multipart,
+    Openai,
 }
 
 #[derive(Subcommand)]
@@ -404,6 +405,7 @@ async fn config(command: ConfigCommand) -> Result<()> {
                 ProtocolArg::Auto => RemoteProtocol::Auto,
                 ProtocolArg::Pcm => RemoteProtocol::Pcm,
                 ProtocolArg::Multipart => RemoteProtocol::Multipart,
+                ProtocolArg::Openai => RemoteProtocol::Openai,
             };
             config.asr.remote.model = args.model;
             if let Some(path) = args.api_key_file {

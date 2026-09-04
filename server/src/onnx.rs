@@ -106,8 +106,9 @@ impl Engine {
             // error_on_failure keeps a missing CUDA provider from silently
             // degrading to CPU inference.
             Provider::Cuda => ExecutionConfig::new().with_custom_configure(|builder| {
-                Ok(builder
-                    .with_execution_providers([ort::ep::CUDA::default().build().error_on_failure()])?)
+                Ok(builder.with_execution_providers([ort::ep::CUDA::default()
+                    .build()
+                    .error_on_failure()])?)
             }),
         };
         let model = ParakeetUnified::from_pretrained(model_dir, Some(config))
@@ -122,7 +123,9 @@ impl Engine {
             .collect::<Vec<_>>();
         let audio_seconds = samples.len() as f64 / f64::from(SAMPLE_RATE);
         let started = Instant::now();
-        let result = self.model.transcribe_samples(samples, SAMPLE_RATE, 1, None)?;
+        let result = self
+            .model
+            .transcribe_samples(samples, SAMPLE_RATE, 1, None)?;
         let inference_seconds = started.elapsed().as_secs_f64();
         Ok(Transcription {
             text: result.text,

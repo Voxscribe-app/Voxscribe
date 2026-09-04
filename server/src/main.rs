@@ -348,7 +348,10 @@ fn install_service(
             .chars()
             .any(char::is_whitespace)
         {
-            bail!("service paths cannot contain whitespace: {}", path.display());
+            bail!(
+                "service paths cannot contain whitespace: {}",
+                path.display()
+            );
         }
     }
     if nemo_model.chars().any(char::is_whitespace) {
@@ -536,9 +539,7 @@ async fn main() -> Result<()> {
                         model: onnx::MODEL_NAME.to_string(),
                         provider: Some(provider),
                         gpu: detected.as_ref().map(|info| info.name.clone()),
-                        compute_capability: detected
-                            .as_ref()
-                            .map(|info| info.capability_string()),
+                        compute_capability: detected.as_ref().map(|info| info.capability_string()),
                         precision: None,
                         load_seconds: started.elapsed().as_secs_f64(),
                     };
@@ -595,7 +596,10 @@ mod tests {
 
     #[test]
     fn explicit_backends_are_never_overridden() {
-        assert_eq!(resolve_backend(Backend::Onnx, Provider::Cuda), Backend::Onnx);
+        assert_eq!(
+            resolve_backend(Backend::Onnx, Provider::Cuda),
+            Backend::Onnx
+        );
         assert_eq!(resolve_backend(Backend::Nemo, Provider::Cpu), Backend::Nemo);
     }
 

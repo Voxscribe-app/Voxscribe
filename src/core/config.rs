@@ -251,7 +251,8 @@ pub enum SamplingStrategy {
 pub struct RemoteConfig {
     pub url: String,
     /// Wire format: `pcm` posts raw 16 kHz mono s16le, `multipart` uploads a
-    /// WAV part, `auto` tries PCM once and remembers the answer.
+    /// WAV part, `openai` uses `/v1/audio/transcriptions`, `auto` probes in
+    /// that order once and remembers the answer.
     pub protocol: RemoteProtocol,
     pub model: Option<String>,
     pub api_key: Option<String>,
@@ -282,6 +283,8 @@ pub enum RemoteProtocol {
     Auto,
     Pcm,
     Multipart,
+    #[serde(rename = "openai")]
+    Openai,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

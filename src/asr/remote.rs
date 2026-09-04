@@ -6,8 +6,9 @@
 //! pooled and kept alive, and optionally warmed at daemon start, so a dictation
 //! never pays for a TCP handshake.
 //!
-//! `multipart` remains available for servers that only accept a WAV upload, and
-//! `auto` probes once and remembers.
+//! `multipart` remains available for servers that only accept a WAV upload,
+//! `openai` targets the OpenAI `/v1/audio/transcriptions` schema that most
+//! third-party voice backends expose, and `auto` probes once and remembers.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -24,6 +25,9 @@ use crate::core::config::{RemoteConfig, RemoteProtocol};
 
 const PCM_CONTENT_TYPE: &str = "audio/l16; rate=16000; channels=1";
 const PCM_SAMPLE_RATE: u32 = 16_000;
+/// The OpenAI schema requires a model name. Servers that serve a single fixed
+/// model ignore it, so this is only a placeholder for when none is configured.
+const OPENAI_DEFAULT_MODEL: &str = "whisper-1";
 
 /// Resolved wire format, stored as an atom so `auto` can settle itself without
 /// a lock on the transcription path.
@@ -32,6 +36,7 @@ enum Wire {
     Unknown = 0,
     Pcm = 1,
     Multipart = 2,
+    OpenAi = 3,
 }
 
 impl Wire {
@@ -39,9 +44,22 @@ impl Wire {
         match value {
             1 => Wire::Pcm,
             2 => Wire::Multipart,
+            3 => Wire::OpenAi,
             _ => Wire::Unknown,
         }
     }
+}
+
+/// The server is saying it does not serve this route, not that transcription
+/// failed, so the caller is free to try another shape.
+fn route_absent(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::NOT_FOUND
+            | StatusCode::METHOD_NOT_ALLOWED
+            | StatusCode::UNSUPPORTED_MEDIA_TYPE
+            | StatusCode::NOT_IMPLEMENTED
+    )
 }
 
 #[derive(Deserialize)]
@@ -105,6 +123,7 @@ impl RemoteBackend {
             RemoteProtocol::Auto => Wire::Unknown,
             RemoteProtocol::Pcm => Wire::Pcm,
             RemoteProtocol::Multipart => Wire::Multipart,
+            RemoteProtocol::Openai => Wire::OpenAi,
         };
 
         Ok(Self {
@@ -147,15 +166,52 @@ impl RemoteBackend {
             .await
             .context("posting PCM to the remote backend")?;
 
-        // A server that does not know this route is telling us to use the
-        // compatibility upload instead, not that transcription failed.
-        if matches!(
-            response.status(),
-            StatusCode::NOT_FOUND
-                | StatusCode::METHOD_NOT_ALLOWED
-                | StatusCode::UNSUPPORTED_MEDIA_TYPE
-                | StatusCode::NOT_IMPLEMENTED
-        ) {
+        if route_absent(response.status()) {
+            return Ok(None);
+        }
+        Ok(Some(read_text(response).await?))
+    }
+
+    /// `/v1/audio/transcriptions`, avoiding a doubled prefix when the configured
+    /// base URL already ends in `/v1`.
+    fn openai_path(&self) -> &'static str {
+        if self.base_url.ends_with("/v1") {
+            "/audio/transcriptions"
+        } else {
+            "/v1/audio/transcriptions"
+        }
+    }
+
+    async fn post_openai(&self, request: &TranscribeRequest<'_>) -> Result<Option<String>> {
+        let samples = resample_for_wire(request.samples, request.sample_rate);
+        let wav_bytes = wav::encode(&samples, PCM_SAMPLE_RATE)?;
+
+        let part = reqwest::multipart::Part::bytes(wav_bytes)
+            .file_name("audio.wav")
+            .mime_str("audio/wav")
+            .context("building the audio part")?;
+        let mut form = reqwest::multipart::Form::new()
+            .part("file", part)
+            .text(
+                "model",
+                self.model
+                    .clone()
+                    .unwrap_or_else(|| OPENAI_DEFAULT_MODEL.to_string()),
+            )
+            .text("response_format", "json");
+        if let Some(language) = request.language.filter(|l| !l.is_empty()) {
+            form = form.text("language", language.to_string());
+        }
+
+        let response = self
+            .client
+            .post(self.url(self.openai_path()))
+            .multipart(form)
+            .send()
+            .await
+            .context("posting audio to the OpenAI-compatible endpoint")?;
+
+        if route_absent(response.status()) {
             return Ok(None);
         }
         Ok(Some(read_text(response).await?))
@@ -290,16 +346,31 @@ impl Backend for RemoteBackend {
                 )
             })?,
             Wire::Multipart => self.post_multipart(&request).await?,
+            Wire::OpenAi => self.post_openai(&request).await?.ok_or_else(|| {
+                anyhow!(
+                    "server has no {} route; check asr.remote.url",
+                    self.openai_path()
+                )
+            })?,
+            // Probe cheapest first, then the common OpenAI schema, then the
+            // legacy upload. Whichever answers is remembered for the session.
             Wire::Unknown => match self.post_pcm(&request).await {
                 Ok(Some(text)) => {
                     self.wire.store(Wire::Pcm as u8, Ordering::Relaxed);
                     text
                 }
-                Ok(None) => {
-                    tracing::info!("remote backend has no raw-PCM route; using WAV upload");
-                    self.wire.store(Wire::Multipart as u8, Ordering::Relaxed);
-                    self.post_multipart(&request).await?
-                }
+                Ok(None) => match self.post_openai(&request).await? {
+                    Some(text) => {
+                        tracing::info!("remote backend speaks the OpenAI audio schema");
+                        self.wire.store(Wire::OpenAi as u8, Ordering::Relaxed);
+                        text
+                    }
+                    None => {
+                        tracing::info!("remote backend has no raw-PCM route; using WAV upload");
+                        self.wire.store(Wire::Multipart as u8, Ordering::Relaxed);
+                        self.post_multipart(&request).await?
+                    }
+                },
                 Err(err) => {
                     // A transport failure says nothing about which route the
                     // server supports, so the probe stays unresolved.
@@ -359,6 +430,43 @@ mod tests {
             Wire::from_u8(backend.wire.load(Ordering::Relaxed)),
             Wire::Unknown
         );
+    }
+
+    #[test]
+    fn the_openai_protocol_pins_the_wire_format() {
+        let mut cfg = config();
+        cfg.protocol = RemoteProtocol::Openai;
+        let backend = RemoteBackend::new(&cfg).unwrap();
+        assert_eq!(
+            Wire::from_u8(backend.wire.load(Ordering::Relaxed)),
+            Wire::OpenAi
+        );
+    }
+
+    #[test]
+    fn a_base_url_ending_in_v1_does_not_get_a_second_one() {
+        let backend = RemoteBackend::new(&config()).unwrap();
+        assert_eq!(backend.openai_path(), "/v1/audio/transcriptions");
+
+        let mut cfg = config();
+        cfg.url = "http://example.invalid:8000/v1".into();
+        let backend = RemoteBackend::new(&cfg).unwrap();
+        assert_eq!(backend.openai_path(), "/audio/transcriptions");
+        assert_eq!(
+            backend.url(backend.openai_path()),
+            "http://example.invalid:8000/v1/audio/transcriptions"
+        );
+    }
+
+    #[test]
+    fn a_missing_route_is_distinguished_from_a_failed_transcription() {
+        assert!(route_absent(StatusCode::NOT_FOUND));
+        assert!(route_absent(StatusCode::METHOD_NOT_ALLOWED));
+        assert!(route_absent(StatusCode::UNSUPPORTED_MEDIA_TYPE));
+        assert!(route_absent(StatusCode::NOT_IMPLEMENTED));
+        assert!(!route_absent(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(!route_absent(StatusCode::UNAUTHORIZED));
+        assert!(!route_absent(StatusCode::OK));
     }
 
     #[test]
@@ -452,6 +560,161 @@ mod tests {
         assert!(health.starts_with("GET /health HTTP/1.1"));
         assert!(pcm.starts_with("POST /transcribe/pcm?language=en&model=parakeet HTTP/1.1"));
         assert_eq!(transcript.text, "hello");
+    }
+
+    /// Serves `responses` in order, handing each raw request back on a channel.
+    async fn serve(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (String, tokio::sync::mpsc::Receiver<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        tokio::spawn(async move {
+            for (code, body) in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let request = read_request(&mut stream).await;
+                tx.send(request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 {code} X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        (format!("http://{address}"), rx)
+    }
+
+    async fn transcribe_once(backend: &RemoteBackend) -> Result<Transcript> {
+        backend
+            .transcribe(TranscribeRequest {
+                samples: &[0.25; 160],
+                sample_rate: 16_000,
+                language: Some("en"),
+                prompt: None,
+            })
+            .await
+    }
+
+    #[tokio::test]
+    async fn the_openai_route_sends_the_fields_the_schema_requires() {
+        let (url, mut requests) = serve(vec![(200, r#"{"text":"hello there"}"#)]).await;
+        let config = RemoteConfig {
+            url,
+            protocol: RemoteProtocol::Openai,
+            model: Some("large-v3-turbo".into()),
+            warmup: false,
+            ..RemoteConfig::default()
+        };
+        let backend = RemoteBackend::new(&config).unwrap();
+        let transcript = transcribe_once(&backend).await.unwrap();
+
+        let request = requests.recv().await.unwrap();
+        assert!(
+            request.starts_with("POST /v1/audio/transcriptions HTTP/1.1"),
+            "{request}"
+        );
+        assert!(request.contains("large-v3-turbo"), "model not sent");
+        assert!(request.contains("response_format"), "format not sent");
+        assert!(request.contains("audio.wav"), "file part not sent");
+        assert_eq!(transcript.text, "hello there");
+    }
+
+    #[tokio::test]
+    async fn an_unset_model_still_satisfies_the_openai_schema() {
+        let (url, mut requests) = serve(vec![(200, r#"{"text":"ok"}"#)]).await;
+        let config = RemoteConfig {
+            url,
+            protocol: RemoteProtocol::Openai,
+            model: None,
+            warmup: false,
+            ..RemoteConfig::default()
+        };
+        let backend = RemoteBackend::new(&config).unwrap();
+        transcribe_once(&backend).await.unwrap();
+
+        let request = requests.recv().await.unwrap();
+        assert!(request.contains(OPENAI_DEFAULT_MODEL), "{request}");
+    }
+
+    #[tokio::test]
+    async fn auto_falls_through_pcm_to_the_openai_route_and_remembers_it() {
+        let (url, mut requests) = serve(vec![
+            (404, "{}"),
+            (200, r#"{"text":"first"}"#),
+            (200, r#"{"text":"second"}"#),
+        ])
+        .await;
+        let config = RemoteConfig {
+            url,
+            protocol: RemoteProtocol::Auto,
+            warmup: false,
+            ..RemoteConfig::default()
+        };
+        let backend = RemoteBackend::new(&config).unwrap();
+
+        assert_eq!(transcribe_once(&backend).await.unwrap().text, "first");
+        assert_eq!(
+            Wire::from_u8(backend.wire.load(Ordering::Relaxed)),
+            Wire::OpenAi
+        );
+
+        assert_eq!(transcribe_once(&backend).await.unwrap().text, "second");
+
+        let pcm = requests.recv().await.unwrap();
+        let openai = requests.recv().await.unwrap();
+        let settled = requests.recv().await.unwrap();
+        assert!(pcm.starts_with("POST /transcribe/pcm"), "{pcm}");
+        assert!(
+            openai.starts_with("POST /v1/audio/transcriptions"),
+            "{openai}"
+        );
+        // Once settled it must not probe PCM again.
+        assert!(
+            settled.starts_with("POST /v1/audio/transcriptions"),
+            "{settled}"
+        );
+    }
+
+    #[tokio::test]
+    async fn auto_still_reaches_the_legacy_upload_when_neither_route_exists() {
+        let (url, mut requests) = serve(vec![
+            (404, "{}"),
+            (404, "{}"),
+            (200, r#"{"text":"legacy"}"#),
+        ])
+        .await;
+        let config = RemoteConfig {
+            url,
+            protocol: RemoteProtocol::Auto,
+            warmup: false,
+            ..RemoteConfig::default()
+        };
+        let backend = RemoteBackend::new(&config).unwrap();
+        assert_eq!(transcribe_once(&backend).await.unwrap().text, "legacy");
+        assert_eq!(
+            Wire::from_u8(backend.wire.load(Ordering::Relaxed)),
+            Wire::Multipart
+        );
+
+        let _pcm = requests.recv().await.unwrap();
+        let _openai = requests.recv().await.unwrap();
+        let legacy = requests.recv().await.unwrap();
+        assert!(legacy.starts_with("POST /transcribe HTTP/1.1"), "{legacy}");
+    }
+
+    #[tokio::test]
+    async fn a_pinned_openai_route_that_is_missing_reports_it_clearly() {
+        let (url, _requests) = serve(vec![(404, "{}")]).await;
+        let config = RemoteConfig {
+            url,
+            protocol: RemoteProtocol::Openai,
+            warmup: false,
+            ..RemoteConfig::default()
+        };
+        let backend = RemoteBackend::new(&config).unwrap();
+        let error = transcribe_once(&backend).await.unwrap_err().to_string();
+        assert!(error.contains("/v1/audio/transcriptions"), "{error}");
     }
 
     async fn read_request(stream: &mut tokio::net::TcpStream) -> String {
