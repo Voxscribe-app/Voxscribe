@@ -10,20 +10,13 @@ use crate::core::state::Phase;
 use render::{Canvas, Color, Layout, Renderer, Theme};
 use surface::{Placement, Window};
 
-/// Animation tick, matching the Quickshell waveform's 50 ms timer.
 const TICK: Duration = Duration::from_millis(50);
-/// How often the Wayland connection is pumped while nothing is on screen.
 const IDLE_TICK: Duration = Duration::from_millis(250);
-/// Fade length, matching `Design.animationFast`.
 const FADE: Duration = Duration::from_millis(110);
-/// An error phase is sticky in the daemon, so the island shows it and leaves.
 const ERROR_SHOW: Duration = Duration::from_secs(3);
 
 enum Message {
-    Update {
-        phase: Phase,
-        level: f32,
-    },
+    Update { phase: Phase, level: f32 },
     Suppressed(bool),
     Stop,
 }

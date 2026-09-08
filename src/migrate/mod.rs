@@ -1,8 +1,5 @@
 pub mod quickshell;
 
-// This file needs compelte rewriting at some point, as this is just.....a mess to all hell
-
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -554,7 +551,6 @@ mod tests {
 
     #[test]
     fn the_real_hyprwhspr_config_migrates_end_to_end() {
-        // Verbatim from the config this was written against.
         let source = json!({
             "recording_mode": "push_to_talk",
             "use_hypr_bindings": true,
@@ -576,11 +572,9 @@ mod tests {
         assert_eq!(config.general.language.as_deref(), Some("en"));
         assert_eq!(config.shortcuts.device_names.len(), 3);
         assert_eq!(config.asr.backend, "whisper");
-        // faster-whisper's model key wins over whisper.cpp's.
         assert_eq!(config.asr.whisper.model, "large-v3-turbo");
         assert!(!config.integrations.osd);
 
-        // wtype must be reported as dropped, not carried over.
         assert!(notes
             .iter()
             .any(|n| matches!(n, Note::Dropped { key, .. } if key.contains("wtype"))));

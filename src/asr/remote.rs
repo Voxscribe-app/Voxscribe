@@ -1,10 +1,3 @@
-//! Remote HTTP ASR (Parakeet and compatible servers).
-//!
-//! The fast path posts raw 16 kHz mono s16le - already the shape the model
-//! wants, so a temporary WAV would only add work at both ends. `multipart`
-//! covers servers that need a WAV upload, `openai` the
-//! `/v1/audio/transcriptions` schema, and `auto` probes once and remembers.
-
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
@@ -20,10 +13,8 @@ use crate::core::config::{RemoteConfig, RemoteProtocol};
 
 const PCM_CONTENT_TYPE: &str = "audio/l16; rate=16000; channels=1";
 const PCM_SAMPLE_RATE: u32 = 16_000;
-/// The OpenAI schema requires a model name; single-model servers ignore it.
 const OPENAI_DEFAULT_MODEL: &str = "whisper-1";
 
-/// Atomic so `auto` can settle without a lock on the transcription path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Wire {
     Unknown = 0,
@@ -43,7 +34,6 @@ impl Wire {
     }
 }
 
-/// Route absent rather than transcription failed, so another shape may work.
 fn route_absent(status: StatusCode) -> bool {
     matches!(
         status,
@@ -103,7 +93,6 @@ impl RemoteBackend {
         let client = Client::builder()
             .default_headers(headers)
             .timeout(timeout)
-            // Latency, not throughput: Nagle would dwarf the inference time.
             .tcp_nodelay(true)
             .pool_idle_timeout(Duration::from_secs(600))
             .pool_max_idle_per_host(4)
@@ -163,7 +152,6 @@ impl RemoteBackend {
         Ok(Some(read_text(response).await?))
     }
 
-    /// Avoids a doubled prefix when the base URL already ends in `/v1`.
     fn openai_path(&self) -> &'static str {
         if self.base_url.ends_with("/v1") {
             "/audio/transcriptions"
@@ -234,8 +222,6 @@ impl RemoteBackend {
     }
 }
 
-/// No-op for live capture, which is already 16 kHz mono; only imported files
-/// need work.
 fn resample_for_wire(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     wav::resample(samples, sample_rate, PCM_SAMPLE_RATE)
 }
@@ -259,7 +245,6 @@ async fn read_text(response: reqwest::Response) -> Result<String> {
     Ok(parse_body(&body))
 }
 
-/// Accept a JSON object, a bare JSON string, or plain text.
 fn parse_body(body: &str) -> String {
     if let Ok(parsed) = serde_json::from_str::<TranscriptionResponse>(body) {
         if let Some(text) = parsed.into_text() {
@@ -296,8 +281,6 @@ impl Backend for RemoteBackend {
             return Ok(());
         }
 
-        // Handshake now, so the first dictation is pure inference time. A
-        // server without /health is fine.
         let result = tokio::time::timeout(
             self.timeout.min(Duration::from_secs(5)),
             self.client.get(self.url("/health")).send(),
@@ -342,7 +325,6 @@ impl Backend for RemoteBackend {
                     self.openai_path()
                 )
             })?,
-            // Cheapest first; whichever answers is remembered for the session.
             Wire::Unknown => match self.post_pcm(&request).await {
                 Ok(Some(text)) => {
                     self.wire.store(Wire::Pcm as u8, Ordering::Relaxed);
@@ -361,8 +343,6 @@ impl Backend for RemoteBackend {
                     }
                 },
                 Err(err) => {
-                    // Transport failure says nothing about the route; stay
-                    // unresolved.
                     return Err(err);
                 }
             },
@@ -480,7 +460,6 @@ mod tests {
         let query = backend.query(Some("en"));
         assert!(query.contains(&("language".into(), "en".into())));
         assert!(query.contains(&("model".into(), "nvidia/parakeet-unified-en-0.6b".into())));
-        // An empty language is omitted rather than sent as "".
         assert!(backend.query(Some("")).iter().all(|(k, _)| k != "language"));
     }
 
@@ -551,7 +530,6 @@ mod tests {
         assert_eq!(transcript.text, "hello");
     }
 
-    /// Serves `responses` in order, echoing each raw request on a channel.
     async fn serve(
         responses: Vec<(u16, &'static str)>,
     ) -> (String, tokio::sync::mpsc::Receiver<String>) {
@@ -658,7 +636,6 @@ mod tests {
             openai.starts_with("POST /v1/audio/transcriptions"),
             "{openai}"
         );
-        // Once settled it must not probe PCM again.
         assert!(
             settled.starts_with("POST /v1/audio/transcriptions"),
             "{settled}"

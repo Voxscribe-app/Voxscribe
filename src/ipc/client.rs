@@ -116,7 +116,6 @@ pub async fn daemon_socket_alive(path: &PathBuf) -> bool {
     UnixStream::connect(path).await.is_ok()
 }
 
-/// One-shot: send a request, take the response, exit.
 pub async fn request(request: Request) -> Result<Response> {
     Client::connect().await?.call(request).await
 }

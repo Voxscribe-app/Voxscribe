@@ -1,14 +1,9 @@
-//! Capture level metering for UI integrations.
-
-/// Exponentially smoothed RMS meter. Smoothing lives here so every consumer
-/// does not repeat it; `raw` stays available for mute detection.
 #[derive(Debug, Clone)]
 pub struct LevelMeter {
     smoothed: f32,
     raw: f32,
     attack: f32,
     release: f32,
-    /// Speech rarely exceeds 0.1 RMS, so a linear 0..1 meter would be flat.
     gain: f32,
 }
 
@@ -36,7 +31,6 @@ impl LevelMeter {
     pub fn push_rms(&mut self, rms: f32) -> f32 {
         self.raw = rms;
         let target = (rms * self.gain).clamp(0.0, 1.0);
-        // Fast attack for onset, slow release so it does not strobe.
         let alpha = if target > self.smoothed {
             self.attack
         } else {
@@ -53,7 +47,6 @@ impl LevelMeter {
         self.smoothed
     }
 
-    /// Unsmoothed RMS of the most recent buffer.
     pub fn raw(&self) -> f32 {
         self.raw
     }
@@ -64,7 +57,6 @@ impl LevelMeter {
     }
 }
 
-/// Digital silence from a hardware-muted mic, far below room tone.
 pub const DIGITAL_SILENCE_RMS: f32 = 5e-7;
 
 pub fn is_digital_silence(rms: f32) -> bool {

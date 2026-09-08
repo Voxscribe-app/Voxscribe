@@ -1,7 +1,3 @@
-//! Replaceable speech-recognition backends. Everything above this layer
-//! speaks only [`Backend`], so a new provider is a module plus a registry
-//! entry.
-
 pub mod remote;
 pub mod whisper;
 
@@ -18,18 +14,15 @@ use crate::core::config::Config;
 pub struct BackendInfo {
     pub id: String,
     pub model: Option<String>,
-    /// Runs on this machine, so the model can be loaded and unloaded.
     pub local: bool,
     pub description: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct TranscribeRequest<'a> {
-    /// Mono f32 samples in -1.0..=1.0.
     pub samples: &'a [f32],
     pub sample_rate: u32,
     pub language: Option<&'a str>,
-    /// Style hint; ignored by backends that have no equivalent.
     pub prompt: Option<&'a str>,
 }
 
@@ -41,12 +34,9 @@ pub struct Transcript {
     pub model: Option<String>,
 }
 
-/// Live streaming session. Unimplemented; the shape exists so adding one is
-/// additive.
 #[async_trait]
 pub trait StreamingSession: Send {
     async fn push(&mut self, samples: &[f32]) -> Result<()>;
-    /// Interim text since the last call, if the provider offers any.
     async fn partial(&mut self) -> Result<Option<String>>;
     async fn finish(self: Box<Self>) -> Result<Transcript>;
 }
@@ -55,14 +45,12 @@ pub trait StreamingSession: Send {
 pub trait Backend: Send + Sync {
     fn info(&self) -> BackendInfo;
 
-    /// Load the model, or open the connection.
     async fn load(&self) -> Result<()>;
 
     async fn transcribe(&self, request: TranscribeRequest<'_>) -> Result<Transcript>;
 
     fn is_ready(&self) -> bool;
 
-    /// Release the model. Local backends free memory; remote ones no-op.
     async fn unload(&self) -> Result<()> {
         Ok(())
     }
@@ -76,7 +64,6 @@ pub trait Backend: Send + Sync {
     }
 }
 
-/// Backend ids accepted by the config, with their aliases.
 pub const KNOWN_BACKENDS: &[(&str, &str)] = &[
     (
         "whisper",
@@ -94,7 +81,6 @@ pub const KNOWN_BACKENDS: &[(&str, &str)] = &[
 
 pub fn canonical_backend_id(id: &str) -> &str {
     match id.trim().to_ascii_lowercase().as_str() {
-        // hyprwhspr's local-backend spellings all mean "run whisper.cpp here".
         "whisper" | "whisper.cpp" | "whisper-rs" | "pywhispercpp" | "cpu" | "nvidia" | "vulkan"
         | "amd" | "faster-whisper" => "whisper",
         "remote" | "parakeet" | "rest-api" | "rest" | "http" | "onnx-asr" => "remote",
@@ -103,7 +89,6 @@ pub fn canonical_backend_id(id: &str) -> &str {
     }
 }
 
-/// Build the configured backend.
 pub fn build(config: &Config) -> Result<Box<dyn Backend>> {
     let mut ids = vec![config.asr.backend.as_str()];
     for id in &config.asr.fallback {
@@ -140,8 +125,6 @@ pub fn build_id(id: &str, config: &Config) -> Result<Box<dyn Backend>> {
     }
 }
 
-/// Consumes audio, returns nothing. Exercises capture and injection without a
-/// model.
 pub struct NullBackend;
 
 struct FallbackBackend {
@@ -249,7 +232,6 @@ impl Backend for NullBackend {
     }
 }
 
-/// Reject unusable audio before paying for a backend round trip.
 pub fn validate_audio(samples: &[f32], sample_rate: u32) -> Result<()> {
     if samples.is_empty() {
         bail!("no audio captured");

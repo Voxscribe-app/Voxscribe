@@ -1,9 +1,3 @@
-//! `zwlr_layer_shell_v1` overlay surface. KWin, Hyprland, Sway and Niri all
-//! implement it, so one path covers every desktop Duskr's shortcuts reach;
-//! GNOME does not, and the OSD reports itself unavailable there.
-//!
-//! The surface exists only while something is on screen.
-
 use std::fs::File;
 use std::os::fd::{AsFd, FromRawFd};
 use std::ptr::NonNull;
@@ -29,10 +23,8 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 use super::render::Canvas;
 use crate::core::config::OsdPosition;
 
-/// Enough to keep drawing while the compositor holds the committed frame.
 const SLOTS: usize = 2;
 
-/// `memfd` mapping shared with the compositor, carved into [`SLOTS`] frames.
 struct Pool {
     pool: WlShmPool,
     buffers: [WlBuffer; SLOTS],
@@ -118,12 +110,10 @@ impl Drop for Pool {
     }
 }
 
-/// A mapped layer surface plus the buffers backing it.
 struct Mapped {
     surface: WlSurface,
     layer: ZwlrLayerSurfaceV1,
     pool: Pool,
-    /// Device pixels, so a scale change forces a rebuild.
     size: (u32, u32),
     configured: bool,
     next_slot: usize,
@@ -140,15 +130,11 @@ struct State {
     compositor: WlCompositor,
     shm: WlShm,
     layer_shell: ZwlrLayerShellV1,
-    /// Scale of every output we have seen, in bind order.
     output_scales: Vec<(WlOutput, u32)>,
-    /// Outputs the surface is currently on; the largest scale wins.
     entered: Vec<WlOutput>,
     mapped: Option<Mapped>,
     released: [bool; SLOTS],
-    /// Set when the compositor asks us to go away.
     closed: bool,
-    /// A configure arrived, so the pending frame has to be redrawn.
     dirty: bool,
 }
 
@@ -278,7 +264,6 @@ delegate_noop!(State: ignore WlShmPool);
 delegate_noop!(State: ignore WlRegion);
 delegate_noop!(State: ignore ZwlrLayerShellV1);
 
-/// Placement and geometry the compositor needs, in logical pixels.
 #[derive(Debug, Clone, Copy)]
 pub struct Placement {
     pub position: OsdPosition,
@@ -287,7 +272,6 @@ pub struct Placement {
     pub height: u32,
 }
 
-/// Owns the Wayland connection for the OSD thread.
 pub struct Window {
     connection: Connection,
     queue: EventQueue<State>,
@@ -296,8 +280,6 @@ pub struct Window {
 }
 
 impl Window {
-    /// Fails when there is no Wayland session or no layer shell; the caller
-    /// treats that as "no native OSD here", not a startup failure.
     pub fn open(placement: Placement) -> Result<Self> {
         let connection = Connection::connect_to_env().context("connecting to Wayland")?;
         let (globals, queue): (GlobalList, EventQueue<State>) =
@@ -314,7 +296,6 @@ impl Window {
             .bind(&qh, 1..=4, ())
             .map_err(|_| anyhow!("compositor has no zwlr_layer_shell_v1"))?;
 
-        // Bound purely to learn their scale factors.
         let names: Vec<(u32, u32)> = globals.contents().with_list(|list| {
             list.iter()
                 .filter(|global| global.interface == WlOutput::interface().name)
@@ -358,14 +339,11 @@ impl Window {
         self.state.mapped.is_some()
     }
 
-    /// Polled so the thread can wait on Wayland and its control channel at
-    /// once.
     pub fn fd(&self) -> std::os::fd::RawFd {
         use std::os::fd::AsRawFd;
         self.connection.as_fd().as_raw_fd()
     }
 
-    /// Reads whatever the compositor has queued without blocking.
     pub fn pump(&mut self) -> Result<()> {
         self.queue.flush()?;
         if let Some(guard) = self.queue.prepare_read() {
@@ -388,7 +366,6 @@ impl Window {
         let qh = self.queue.handle();
         let surface = self.state.compositor.create_surface(&qh, ());
 
-        // Empty input region: pointer events pass through to what is below.
         let region = self.state.compositor.create_region(&qh, ());
         surface.set_input_region(Some(&region));
         region.destroy();
@@ -404,7 +381,6 @@ impl Window {
         layer.set_size(self.placement.width, self.placement.height);
         layer.set_anchor(anchor_for(self.placement.position));
         layer.set_keyboard_interactivity(KeyboardInteractivity::None);
-        // Float above panels rather than below them.
         layer.set_exclusive_zone(-1);
         let margin = self.placement.margin as i32;
         let (top, right, bottom, left) = margins_for(self.placement.position, margin);
@@ -431,7 +407,6 @@ impl Window {
         let _ = self.queue.flush();
     }
 
-    /// False when no buffer is free, meaning the frame is skipped.
     pub fn present(&mut self, canvas: &Canvas) -> Result<bool> {
         let qh = self.queue.handle();
         let Some(mapped) = &mut self.state.mapped else {
@@ -484,7 +459,6 @@ fn anchor_for(position: OsdPosition) -> Anchor {
     }
 }
 
-/// Applied only on the anchored edges.
 fn margins_for(position: OsdPosition, margin: i32) -> (i32, i32, i32, i32) {
     let anchor = anchor_for(position);
     (

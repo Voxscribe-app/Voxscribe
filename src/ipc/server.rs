@@ -119,7 +119,6 @@ async fn serve(
         };
 
         if matches!(request, Request::Subscribe) {
-            // Current state first, so a subscriber never has to poll.
             let snapshot = Response::Event(Event::State(state.get()));
             write_half.write_all(encode(&snapshot)?.as_bytes()).await?;
             return stream_events(write_half, state).await;

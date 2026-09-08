@@ -1,15 +1,9 @@
-//! Local whisper.cpp backend. Reads the same ggml files hyprwhspr and
-//! pywhispercpp use. The model stays resident; inference runs on a blocking
-//! thread.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::core::config::Config;
 
-/// GPU backend compiled in, if any. whisper.cpp falls back to CPU silently -
-/// ten seconds and every core instead of one - so `use_gpu` is enforced here.
 pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "cuda") {
     Some("cuda")
 } else if cfg!(feature = "vulkan") {
@@ -18,8 +12,6 @@ pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "cuda") {
     None
 };
 
-/// Accepts an absolute path, a bare name (`medium.en`), or a prefixed file
-/// name (`ggml-medium.en.bin`).
 pub fn resolve_model_path(model: &str, models_dir: &Path) -> PathBuf {
     let model = model.trim();
     let candidate = Path::new(model);
@@ -32,7 +24,6 @@ pub fn resolve_model_path(model: &str, models_dir: &Path) -> PathBuf {
     models_dir.join(format!("ggml-{model}.bin"))
 }
 
-/// Model name as users refer to it, derived from a ggml file name.
 pub fn model_name_from_path(path: &Path) -> String {
     let stem = path
         .file_name()
@@ -63,7 +54,6 @@ mod imp {
     use crate::asr::{Backend, BackendInfo, TranscribeRequest, Transcript};
     use crate::core::config::{Config, SamplingStrategy};
 
-    /// whisper.cpp is fixed at 16 kHz.
     const MODEL_SAMPLE_RATE: u32 = 16_000;
 
     struct Loaded {
@@ -157,13 +147,11 @@ mod imp {
             params.set_temperature(self.temperature);
             params.set_suppress_blank(true);
             params.set_suppress_nst(self.suppress_non_speech);
-            // Nothing consumes timestamps, and printing spams the journal.
             params.set_no_timestamps(true);
             params.set_print_special(false);
             params.set_print_progress(false);
             params.set_print_realtime(false);
             params.set_print_timestamps(false);
-            // Carried context makes whisper repeat itself on quiet audio.
             params.set_no_context(true);
             if !self.prompt.trim().is_empty() {
                 params.set_initial_prompt(&self.prompt);
@@ -191,7 +179,6 @@ mod imp {
             if guard.is_some() {
                 return Ok(());
             }
-            // Seconds of CPU and gigabytes of I/O; keep IPC answering.
             let loaded = tokio::task::block_in_place(|| self.open())?;
             *guard = Some(loaded);
             self.ready.store(true, Ordering::SeqCst);
@@ -273,7 +260,6 @@ mod tests {
         } else if cfg!(feature = "vulkan") {
             assert_eq!(GPU_BACKEND, Some("vulkan"));
         } else {
-            // A CPU-only build must say so, or `use_gpu` cannot be enforced.
             assert_eq!(GPU_BACKEND, None);
         }
     }

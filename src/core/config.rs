@@ -1,6 +1,3 @@
-//! On-disk configuration. Every field has a default, so a config file only
-//! names what it changes.
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -28,13 +25,9 @@ pub struct Config {
 #[serde(default, deny_unknown_fields)]
 pub struct General {
     pub recording_mode: RecordingMode,
-    /// Transcription language; `None` lets the backend auto-detect.
     pub language: Option<String>,
-    /// Send Enter after the transcript lands.
     pub auto_submit: bool,
-    /// Keep the last N transcripts in `history.jsonl`; 0 disables history.
     pub history_limit: usize,
-    /// Tap-vs-hold boundary for [`RecordingMode::Auto`].
     pub tap_threshold_ms: u64,
 }
 
@@ -53,15 +46,10 @@ impl Default for General {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecordingMode {
-    /// Press to start, press again to stop.
     Toggle,
-    /// Record while the shortcut is held.
     PushToTalk,
-    /// Tap toggles, hold behaves as push-to-talk.
     Auto,
-    /// Stays open and flushes a transcript on every speech pause.
     Continuous,
-    /// Segmented recording with pause/resume, submitted explicitly.
     LongForm,
 }
 
@@ -93,18 +81,13 @@ impl RecordingMode {
 pub struct Shortcuts {
     pub primary: String,
     pub secondary: Option<String>,
-    /// Language forced by the secondary shortcut.
     pub secondary_language: Option<String>,
     pub cancel: Option<String>,
     pub long_form_submit: Option<String>,
-    /// Grab keyboards exclusively so the chord never reaches other apps.
     pub grab_keys: bool,
-    /// Allowlist of keyboard device names; empty means "every keyboard".
     pub device_names: Vec<String>,
     pub device_path: Option<PathBuf>,
-    /// Pick up keyboards plugged in after startup.
     pub hotplug: bool,
-    /// Ignore repeated triggers within this window.
     pub debounce_ms: u64,
 }
 
@@ -128,12 +111,9 @@ impl Default for Shortcuts {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Audio {
-    /// PipeWire target: node name, node id, or `None` for the default source.
     pub device: Option<String>,
-    /// PipeWire node name or id used when `device` is unset.
     pub device_match: Option<String>,
     pub sample_rate: u32,
-    /// Mic stays warm, at the cost of a permanent in-use indicator.
     pub keepalive: bool,
     pub feedback: bool,
     pub volume: f32,
@@ -142,16 +122,10 @@ pub struct Audio {
     pub error_sound: Option<PathBuf>,
     pub ducking: bool,
     pub ducking_percent: u8,
-    /// Abort a recording that only ever sees digital silence.
     pub mute_detection: bool,
-    /// Auto-stop after N seconds of silence (0 = never). Arms only after
-    /// speech, so a slow start is not cut off.
     pub silence_timeout: f32,
-    /// Continuous mode: silence needed before a segment is flushed.
     pub continuous_silence_seconds: f32,
-    /// RMS below which audio counts as silence; 0 auto-calibrates per session.
     pub silence_threshold: f32,
-    /// Hard cap on a single recording.
     pub max_recording_seconds: u32,
     pub long_form_segment_seconds: u32,
     pub long_form_limit_mb: u32,
@@ -185,9 +159,7 @@ impl Default for Audio {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Asr {
-    /// Active backend id; see `duskr backend list`.
     pub backend: String,
-    /// Backends tried in order when `backend` fails to load or transcribe.
     pub fallback: Vec<String>,
     pub whisper: WhisperConfig,
     pub remote: RemoteConfig,
@@ -207,17 +179,14 @@ impl Default for Asr {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WhisperConfig {
-    /// Model name (`medium.en`) or an absolute path to a ggml file.
     pub model: String,
     pub threads: Option<usize>,
     pub prompt: String,
-    /// Emit English regardless of the spoken language.
     pub translate: bool,
     pub beam_size: usize,
     pub strategy: SamplingStrategy,
     pub use_gpu: bool,
     pub temperature: f32,
-    /// Whisper's own VAD-ish suppression of non-speech tokens.
     pub suppress_non_speech: bool,
 }
 
@@ -250,12 +219,10 @@ pub enum SamplingStrategy {
 #[serde(default, deny_unknown_fields)]
 pub struct RemoteConfig {
     pub url: String,
-    /// `auto` probes pcm, multipart then openai once and remembers.
     pub protocol: RemoteProtocol,
     pub model: Option<String>,
     pub api_key: Option<String>,
     pub timeout_ms: u64,
-    /// Connect at daemon start, so the first dictation skips the handshake.
     pub warmup: bool,
     pub headers: BTreeMap<String, String>,
 }
@@ -284,17 +251,12 @@ pub enum RemoteProtocol {
     Openai,
 }
 
-/// Post-transcription translation. Separate from `asr.whisper.translate`,
-/// which can only ever produce English.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Translation {
-    /// `es`, `ja`, `pt-BR`. Unset disables translation.
     pub target: Option<String>,
-    /// Unset auto-detects, falling back to `general.language`.
     pub source: Option<String>,
     pub skip_when_same: bool,
-    /// Type the untranslated text when the translator is unreachable.
     pub fallback_to_original: bool,
     pub timeout_ms: u64,
 }
@@ -312,7 +274,6 @@ impl Default for Translation {
 }
 
 impl Translation {
-    /// `None` when translation is off.
     pub fn target_code(&self) -> Option<String> {
         normalize_language(self.target.as_deref())
     }
@@ -342,7 +303,6 @@ impl Translation {
     }
 }
 
-/// Fold a language code into `ll` / `ll-RR`, so `PT_br` == `pt-BR`.
 pub fn normalize_language(value: Option<&str>) -> Option<String> {
     let raw = value?.trim().replace('_', "-");
     let (language, region) = match raw.split_once('-') {
@@ -365,18 +325,13 @@ pub fn normalize_language(value: Option<&str>) -> Option<String> {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Text {
-    /// Case-insensitive whole-word replacements.
     pub word_overrides: BTreeMap<String, String>,
     pub filter_filler_words: bool,
     pub filler_words: Vec<String>,
-    /// Turn spoken punctuation ("comma", "new line") into characters.
     pub symbol_replacements: bool,
-    /// Transcript on stdin; non-empty stdout wins.
     pub post_hook: Option<String>,
     pub post_hook_timeout_ms: u64,
-    /// Keeps consecutive dictations from running together.
     pub trailing_space: bool,
-    /// Drop known Whisper silence hallucinations.
     pub drop_hallucinations: bool,
     pub capitalize_first: bool,
 }
@@ -404,13 +359,9 @@ impl Default for Text {
 #[serde(default, deny_unknown_fields)]
 pub struct Input {
     pub mode: InjectMode,
-    /// Gap between key events. Too small and Electron/games drop characters.
     pub key_delay_us: u64,
-    /// Extra settle time after the last keystroke before Enter is sent.
     pub submit_delay_ms: u64,
-    /// Chord used when a transcript has to go through the clipboard.
     pub paste_chord: String,
-    /// Restore the pre-existing clipboard after a clipboard paste.
     pub restore_clipboard: bool,
     pub restore_clipboard_delay_ms: u64,
     pub applications: BTreeMap<String, AppRule>,
@@ -433,17 +384,12 @@ impl Default for Input {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InjectMode {
-    /// Synthesize keystrokes; clipboard untouched.
     Type,
-    /// Always paste, saving and restoring the clipboard.
     Clipboard,
-    /// Type, using the clipboard only for unrepresentable characters.
     Auto,
-    /// Inject nothing; IPC subscribers still see the text.
     None,
 }
 
-/// Keyed by normalized window class/app-id.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct AppRule {
@@ -451,14 +397,12 @@ pub struct AppRule {
     pub auto_submit: Option<bool>,
     pub paste_chord: Option<String>,
     pub key_delay_us: Option<u64>,
-    /// Inject nothing at all while this app is focused.
     pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Models {
-    /// Overridden at runtime by `DUSKR_MODEL_DIR`.
     pub dir: Option<PathBuf>,
     pub download_base_url: String,
 }
@@ -476,11 +420,8 @@ impl Default for Models {
 #[serde(default, deny_unknown_fields)]
 pub struct Integrations {
     pub notifications: bool,
-    /// Emit an OSD hint over D-Bus while recording.
     pub osd: bool,
-    /// Mirror state/level into the config dir for Waybar-style pollers.
     pub legacy_state_files: bool,
-    /// Run on every state change with the state JSON on stdin.
     pub state_hook: Option<String>,
 }
 
@@ -495,30 +436,24 @@ impl Default for Integrations {
     }
 }
 
-/// Layer-shell island drawn by the daemon. Separate from `integrations.osd`,
-/// which only asks the notification daemon for a popup.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Osd {
     pub enabled: OsdMode,
     pub position: OsdPosition,
-    /// Distance from the anchored screen edges, in logical pixels.
     pub margin: u32,
     pub width: u32,
     pub height: u32,
     pub radius: u32,
-    /// Level bars drawn next to the microphone.
     pub bars: usize,
     pub opacity: f32,
     pub background: String,
     pub accent: String,
-    /// How long the island stays up after recording ends.
     pub linger_ms: u64,
 }
 
 impl Default for Osd {
     fn default() -> Self {
-        // Geometry matches the Quickshell island, for machines with both.
         Self {
             enabled: OsdMode::Auto,
             position: OsdPosition::Top,
@@ -538,7 +473,6 @@ impl Default for Osd {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OsdMode {
-    /// Draw only when no other widget is already showing Duskr's state.
     Auto,
     On,
     Off,
@@ -576,8 +510,6 @@ impl Config {
         Ok(config)
     }
 
-    /// Falls back to defaults on error: a config typo must not make the daemon
-    /// unstartable.
     pub fn load_or_default() -> Self {
         match Self::load() {
             Ok(config) => config,
@@ -606,7 +538,6 @@ impl Config {
         Ok(())
     }
 
-    /// Model directory; `DUSKR_MODEL_DIR` wins.
     pub fn models_dir(&self) -> PathBuf {
         if let Some(dir) = std::env::var_os("DUSKR_MODEL_DIR") {
             let dir = PathBuf::from(dir);
@@ -617,7 +548,6 @@ impl Config {
         self.models_dir_configured()
     }
 
-    /// Ignores `DUSKR_MODEL_DIR`.
     pub fn models_dir_configured(&self) -> PathBuf {
         self.models
             .dir
@@ -633,7 +563,6 @@ impl Config {
         })
     }
 
-    /// Matched against normalized window identifiers.
     pub fn app_rule(&self, identifiers: &[String]) -> Option<&AppRule> {
         for ident in identifiers {
             if let Some(rule) = self.input.applications.get(ident) {

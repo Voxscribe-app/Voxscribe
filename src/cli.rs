@@ -35,7 +35,9 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    Transcribe { path: PathBuf },
+    Transcribe {
+        path: PathBuf,
+    },
     Backend {
         #[command(subcommand)]
         command: BackendCommand,
@@ -107,7 +109,9 @@ enum ModelCommand {
         #[arg(long)]
         move_file: bool,
     },
-    Remove { name: String },
+    Remove {
+        name: String,
+    },
     Download {
         name: String,
         #[arg(long)]
@@ -126,7 +130,9 @@ enum ConfigCommand {
         #[arg(long)]
         force: bool,
     },
-    SetModel { model: String },
+    SetModel {
+        model: String,
+    },
     SetRemote(RemoteArgs),
 }
 

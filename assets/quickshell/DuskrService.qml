@@ -2,18 +2,10 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 
-// Native Duskr service for Quickshell.
-//
-// `duskr quickshell watch` holds one socket open and prints a JSON line on
-// every state or level change, so there is no polling and no per-tick process.
-// The exposed properties match the hyprwhspr service this replaces -
-// available, state, tooltip, level, levelActive - so existing widgets keep
-// working unchanged.
 Item {
     id: service
     visible: false
 
-    // Optional: assign a ShellController to have the service register itself.
     property var controller: null
     property string registerAs: ""
 
@@ -30,9 +22,6 @@ Item {
 
     signal transcript(string text)
 
-    // "record" and "restart" are accepted so widgets written against the
-    // hyprwhspr service need no edits, and "start"/"stop" still resolve now
-    // that the CLI has only the one toggle.
     function perform(action) {
         const map = {
             "record": "toggle",
@@ -82,8 +71,6 @@ Item {
             service.transcript(data.transcript)
         }
 
-        // The morph overlay keys off levelActive, so it has to follow the
-        // recording state rather than whether the level happens to be non-zero.
         levelActive = state === "recording" || state === "paused"
     }
 
@@ -101,8 +88,6 @@ Item {
         running: true
         command: ["duskr", "quickshell", "watch"]
         stdout: SplitParser { onRead: line => service.applyLine(line) }
-        // The daemon may not be up yet, or may be restarting; retry rather than
-        // leaving the widget dead until the shell is reloaded.
         onExited: {
             service.markUnavailable()
             retryTimer.start()

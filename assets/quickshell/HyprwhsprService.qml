@@ -3,12 +3,8 @@ import Quickshell
 import Quickshell.Io
 import ".."
 
-// Drop-in replacement for the hyprwhspr Quickshell service, backed by Duskr.
-//
-// Installed by `duskr migrate hyprwhspr` (the original is backed up first).
-// It keeps the file name, the `controller.hyprwhsprService` registration and
-// the property API, so HyprwhsprIndicator, HyprwhsprWaveform,
-// DictationIslandContent and MorphOverlay need no changes.
+// Drop-in replacement for the hyprwhspr service, installed by `duskr migrate
+// hyprwhspr`. The original is backed up first.
 Item {
     id: service
     visible: false
@@ -20,7 +16,6 @@ Item {
     property real level: 0
     property bool levelActive: false
 
-    // Extras the hyprwhspr service did not have; safe for widgets to ignore.
     property bool ready: false
     property string backend: ""
     property string model: ""
@@ -52,11 +47,6 @@ Item {
         }
         available = true
 
-        // `watch` interleaves partial lines - {"level":...} while recording,
-        // {"transcript":...} on completion - with full status lines. Each field
-        // is merged only when present; overwriting on every line would drop the
-        // state back to idle between level updates and make the island morph
-        // restart several times a second.
         if (data.class !== undefined)
             state = data.class
         if (data.tooltip !== undefined)

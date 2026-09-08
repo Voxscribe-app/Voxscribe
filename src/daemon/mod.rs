@@ -1,7 +1,3 @@
-//! The long-lived daemon. Owns everything expensive and keeps it hot; the
-//! event loop only routes messages, each arriving on its own channel so none
-//! can block another.
-
 pub mod session;
 pub mod transcribe;
 
@@ -30,11 +26,8 @@ use crate::ipc::{Request, Response};
 
 use session::{Action, AutoModeState, SessionPhase, SessionRules};
 
-/// How often the capture level is sampled and republished.
 const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
-/// Ignore the first moments of a recording when deciding the mic is muted.
 const MUTE_GRACE: Duration = Duration::from_millis(600);
-/// Sustained digital silence before a recording is abandoned as muted.
 const MUTE_TIMEOUT: Duration = Duration::from_millis(1_200);
 
 pub struct Daemon {
@@ -47,9 +40,7 @@ pub struct Daemon {
     injector: Option<Arc<Injector>>,
     notifier: Arc<Notifier>,
     writer: StateWriter,
-    /// Layer-shell island, absent when disabled or unsupported.
     osd: Option<Osd>,
-    /// Only changes are pushed, not one message per level tick.
     osd_suppressed: bool,
     jobs: mpsc::UnboundedSender<transcribe::Job>,
 
@@ -58,17 +49,14 @@ pub struct Daemon {
     press_at: Option<Instant>,
     started_at: Option<Instant>,
     language: Option<String>,
-    /// Long-form segments captured so far.
     segments: Vec<Vec<f32>>,
     vad: Option<Vad>,
     silence_since: Option<Instant>,
     last_level_sample: Instant,
     next_audio_retry: Option<Instant>,
-    /// Kept alive for the daemon's lifetime.
     hotkeys: Option<HotkeyListener>,
 }
 
-/// Start the daemon and run until a shutdown signal arrives.
 pub async fn run() -> Result<()> {
     let config = Arc::new(Config::load_or_default());
     let state = StateHandle::new(Snapshot {
@@ -122,8 +110,6 @@ pub async fn run() -> Result<()> {
         .context("creating the ASR backend")?
         .into();
 
-    // Background, so shortcuts and IPC answer immediately. Recording is
-    // refused until it finishes.
     {
         let backend = Arc::clone(&backend);
         let state = state.clone();
@@ -345,7 +331,6 @@ impl Daemon {
         self.language = language.or_else(|| self.config.general.language.clone());
         self.capture.arm();
 
-        // Continuous mode also uses it to decide when to flush a segment.
         self.vad = self.make_vad();
         self.silence_since = None;
         self.started_at = Some(Instant::now());
@@ -423,7 +408,6 @@ impl Daemon {
         } else {
             tail
         };
-        // A click at push-to-talk release is not speech.
         if samples.len() < (self.capture.sample_rate() as f32 * 0.1) as usize {
             samples.clear();
         }
@@ -486,7 +470,6 @@ impl Daemon {
         if self.phase != SessionPhase::Recording {
             return;
         }
-        // Long-form: keep what was said and stop consuming audio.
         let segment = self.capture.take();
         if !segment.is_empty() {
             self.segments.push(segment);
@@ -533,7 +516,6 @@ impl Daemon {
         });
     }
 
-    /// Periodic work: level publication, mute detection, VAD, hard limits.
     async fn on_tick(&mut self) {
         let level = self.capture.level();
         if self.phase == SessionPhase::Recording {
@@ -604,7 +586,6 @@ impl Daemon {
         self.check_vad(elapsed).await;
     }
 
-    /// Abort a recording whose microphone is producing true digital silence.
     async fn check_muted(&mut self) -> bool {
         if !self.config.audio.mute_detection {
             return false;
@@ -645,7 +626,6 @@ impl Daemon {
         vad.reset();
 
         if self.config.general.recording_mode == RecordingMode::Continuous {
-            // Flush, but keep the microphone open.
             let segment = self.capture.drain();
             if !segment.is_empty() {
                 tracing::debug!("continuous mode flushing {} samples", segment.len());
@@ -691,8 +671,6 @@ impl Daemon {
             }
             return;
         }
-        // Resume invalidates PipeWire proxies and can leave GPU contexts
-        // stale; rebuild now rather than failing on the next dictation.
         tracing::info!("system resumed; refreshing audio and backend");
         self.capture.reconnect();
         let backend = Arc::clone(&self.backend);
@@ -708,7 +686,6 @@ impl Daemon {
         });
     }
 
-    /// Handle an IPC command. Returns true when the daemon should exit.
     async fn on_command(&mut self, command: Command) -> bool {
         let Command { request, reply } = command;
         let mut shutdown = false;
@@ -864,7 +841,6 @@ impl Daemon {
         }
     }
 
-    /// Settings owning a hardware resource need a restart, and say so.
     async fn reload(&mut self) -> Result<()> {
         let new_config = Config::load()?;
         let hardware_changed = new_config.shortcuts != self.config.shortcuts
@@ -891,8 +867,6 @@ impl Daemon {
         Ok(())
     }
 
-    /// In `auto` mode the island stands down when an IPC watcher is already
-    /// showing the same information.
     fn update_osd(&mut self, snapshot: &Snapshot) {
         let Some(osd) = &self.osd else {
             return;
@@ -953,7 +927,6 @@ impl Daemon {
         self.notifier.clear().await;
         self.writer.cleanup();
         let _ = std::fs::remove_file(paths::pid_file());
-        // Let the ducker's PipeWire thread land its restore.
         tokio::time::sleep(Duration::from_millis(120)).await;
     }
 }

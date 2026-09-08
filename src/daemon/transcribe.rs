@@ -1,7 +1,3 @@
-//! The transcription worker. Jobs run one at a time on their own task, so
-//! queued segments are never typed out of order and a slow model cannot stall
-//! the daemon's event loop.
-
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -22,7 +18,6 @@ pub struct Job {
     pub sample_rate: u32,
     pub language: Option<String>,
     pub config: Arc<Config>,
-    /// Continuous mode: do not reset the phase to idle when this job ends.
     pub keep_recording: bool,
 }
 
@@ -33,7 +28,6 @@ pub struct Worker {
 }
 
 impl Worker {
-    /// Drain `jobs` until the channel closes.
     pub async fn run(self, mut jobs: mpsc::UnboundedReceiver<Job>) {
         while let Some(job) = jobs.recv().await {
             let keep_recording = job.keep_recording;
@@ -111,7 +105,6 @@ impl Worker {
             let injector = Arc::clone(injector);
             let config = Arc::clone(&job.config);
             let payload = text.clone();
-            // Injection sleeps between key events; keep it off the runtime.
             let outcome =
                 tokio::task::spawn_blocking(move || injector.inject(&payload, &config)).await??;
             tracing::info!(
@@ -190,9 +183,6 @@ fn trim_history(raw: &str, limit: usize) -> String {
     output
 }
 
-/// Text pipeline, then translation, then the user's hook. Translation sits
-/// between the two so spoken symbols resolve in the dictated language and the
-/// hook sees what will actually be typed.
 pub async fn finish(
     raw: &str,
     config: &Config,
@@ -206,7 +196,6 @@ pub async fn finish(
         translate::apply(&processed, config).await
     };
 
-    // Emitted even on a drop, so `doctor --watch` can show why.
     if let Some(state) = state {
         state.emit(Event::Pipeline {
             raw: raw.to_string(),
@@ -242,7 +231,6 @@ pub async fn finish(
     text::finalize_for_injection(&hooked, &config.text)
 }
 
-/// Language the injected text ends up in, for the hook env.
 fn output_language(config: &Config) -> String {
     config
         .translation
@@ -279,7 +267,6 @@ mod tests {
     #[tokio::test]
     async fn the_hook_is_skipped_for_an_empty_transcript() {
         let mut config = Config::default();
-        // The hook would replace anything it received; it must not run at all.
         config.text.post_hook = Some("echo replaced".into());
         assert_eq!(finish("Thank you.", &config, "test", None).await, "");
     }

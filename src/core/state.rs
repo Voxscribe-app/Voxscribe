@@ -1,6 +1,3 @@
-//! Observable daemon state: a `watch` channel for the latest snapshot, a
-//! `broadcast` channel for discrete events. Nothing here blocks.
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -12,11 +9,9 @@ use crate::core::config::RecordingMode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Phase {
-    /// Backend still loading; recording requests are refused.
     Starting,
     Idle,
     Recording,
-    /// Long-form recording held open between segments.
     Paused,
     Processing,
     Error,
@@ -34,7 +29,6 @@ impl Phase {
         }
     }
 
-    /// `idle` maps to hyprwhspr's `stopped`, so old stylesheets keep working.
     pub fn css_class(self) -> &'static str {
         match self {
             Self::Starting => "starting",
@@ -51,15 +45,12 @@ impl Phase {
 pub struct Snapshot {
     pub phase: Phase,
     pub mode: String,
-    /// Smoothed 0.0..=1.0, 0 when not recording.
     pub level: f32,
     pub backend: String,
     pub model: Option<String>,
-    /// Backend loaded and able to transcribe.
     pub ready: bool,
     pub message: String,
     pub recording_ms: u64,
-    /// Long-form segments captured so far.
     pub segments: usize,
     pub last_transcript: Option<String>,
     pub last_latency_ms: Option<u64>,
@@ -88,12 +79,10 @@ impl Default for Snapshot {
 }
 
 impl Snapshot {
-    /// Shape the Quickshell service expects.
     pub fn tooltip(&self) -> String {
         let mut lines = vec![match self.phase {
             Phase::Starting => "Duskr: starting".to_string(),
             Phase::Idle if self.ready => "Duskr: ready".to_string(),
-            // Idle but not ready means a deliberate unload.
             Phase::Idle if self.message.is_empty() => "Duskr: model unloaded".to_string(),
             Phase::Idle => format!("Duskr: {}", self.message),
             Phase::Recording => format!(
@@ -119,8 +108,6 @@ impl Snapshot {
     }
 }
 
-/// Discrete notifications for IPC subscribers. Snapshot deltas stay separate,
-/// so a slow subscriber can miss events without corrupting visible state.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
@@ -128,20 +115,14 @@ pub enum Event {
     Level {
         level: f32,
     },
-    /// Streaming/interim text, or the final transcript before injection.
     Transcript {
         text: String,
         final_: bool,
     },
-    /// Diagnostic only, for `duskr doctor --watch`. Emitted even when the
-    /// transcript is dropped, so it can show why nothing was typed.
     Pipeline {
         raw: String,
-        /// After cleanup, overrides and spoken symbols.
         processed: String,
-        /// Equal to `processed` when translation is off.
         translated: String,
-        /// Empty when auto-detected, absent when no translation ran.
         source: Option<String>,
         target: Option<String>,
     },
@@ -158,8 +139,6 @@ pub enum Event {
 pub struct StateHandle {
     snapshot: watch::Sender<Snapshot>,
     events: broadcast::Sender<Event>,
-    /// Streaming IPC clients, so the native OSD knows if a widget already
-    /// shows Duskr's state.
     watchers: Arc<AtomicUsize>,
 }
 
@@ -186,7 +165,6 @@ impl StateHandle {
         self.events.subscribe()
     }
 
-    /// Emits a `State` event only if something changed.
     pub fn update(&self, f: impl FnOnce(&mut Snapshot)) {
         let mut next = self.snapshot.borrow().clone();
         let before = next.clone();
@@ -198,7 +176,6 @@ impl StateHandle {
         let _ = self.events.send(Event::State(next));
     }
 
-    /// High-frequency, so it bypasses the snapshot-diff path.
     pub fn set_level(&self, level: f32) {
         let level = level.clamp(0.0, 1.0);
         let changed = (self.snapshot.borrow().level - level).abs() > 0.002;
@@ -212,7 +189,6 @@ impl StateHandle {
         let _ = self.events.send(event);
     }
 
-    /// Registers an event-stream client for as long as the guard lives.
     pub fn watcher(&self) -> WatcherGuard {
         self.watchers.fetch_add(1, Ordering::Relaxed);
         WatcherGuard {
@@ -225,8 +201,6 @@ impl StateHandle {
     }
 }
 
-/// Decrements the watcher count however the connection ends, including on a
-/// write error part-way through a stream.
 pub struct WatcherGuard {
     watchers: Arc<AtomicUsize>,
 }

@@ -1,10 +1,5 @@
-//! Software renderer for the OSD island. Every shape is a signed distance
-//! field evaluated per pixel, which keeps this free of a toolkit and a font
-//! stack. Output is premultiplied ARGB8888, as `wl_shm` wants.
-
 use crate::core::state::Phase;
 
-/// Straight alpha; premultiplied once, at the blend.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub r: f32,
@@ -18,7 +13,6 @@ impl Color {
         Self { r, g, b, a }
     }
 
-    /// Accepts `#rgb`, `#rrggbb` and `#rrggbbaa`, with or without the hash.
     pub fn parse(spec: &str) -> Option<Self> {
         let hex = spec.trim().trim_start_matches('#');
         let byte = |i: usize| u8::from_str_radix(&hex[i..i + 2], 16).ok();
@@ -56,7 +50,6 @@ impl Color {
         }
     }
 
-    /// Lighten towards white, as the Quickshell theme derives surfaces.
     pub fn lighter(self, amount: f32) -> Self {
         self.mix(Self::rgba(1.0, 1.0, 1.0, self.a), amount)
     }
@@ -84,8 +77,6 @@ impl Default for Theme {
     }
 }
 
-/// Logical pixels. Defaults reproduce the Quickshell island: a 172x36 pill
-/// holding a microphone and sixteen 3px bars.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layout {
     pub width: f32,
@@ -123,13 +114,11 @@ impl Layout {
         bars * self.bar_width + (bars - 1.0) * self.bar_spacing
     }
 
-    /// Width the content needs, so a narrow `width` still centres.
     pub fn content_width(&self) -> f32 {
         self.icon + self.gap + self.bars_width()
     }
 }
 
-/// Premultiplied ARGB8888 pixel buffer at a fixed integer scale.
 pub struct Canvas {
     pub width: u32,
     pub height: u32,
@@ -154,8 +143,6 @@ impl Canvas {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        // u32 has no padding, and little-endian ARGB8888 is byte-order BGRA,
-        // which is what wl_shm expects.
         unsafe { std::slice::from_raw_parts(self.data.as_ptr() as *const u8, self.data.len() * 4) }
     }
 
@@ -163,7 +150,6 @@ impl Canvas {
         self.data.fill(0);
     }
 
-    /// Source-over blend of a straight-alpha colour at `coverage`.
     fn blend(&mut self, x: u32, y: u32, color: Color, coverage: f32) {
         let alpha = color.a * coverage;
         if alpha <= 0.0 {
@@ -182,7 +168,6 @@ impl Canvas {
     }
 }
 
-/// Signed distance to a rounded rectangle centred on the origin.
 fn sd_round_rect(px: f32, py: f32, half_w: f32, half_h: f32, radius: f32) -> f32 {
     let radius = radius.min(half_w).min(half_h).max(0.0);
     let qx = px.abs() - (half_w - radius);
@@ -191,7 +176,6 @@ fn sd_round_rect(px: f32, py: f32, half_w: f32, half_h: f32, radius: f32) -> f32
     outside + qx.max(qy).min(0.0) - radius
 }
 
-/// Signed distance to the segment `a`-`b`, i.e. an unstroked line.
 fn sd_segment(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     let (pax, pay) = (px - ax, py - ay);
     let (bax, bay) = (bx - ax, by - ay);
@@ -204,8 +188,6 @@ fn sd_segment(px: f32, py: f32, ax: f32, ay: f32, bx: f32, by: f32) -> f32 {
     ((pax - bax * t).powi(2) + (pay - bay * t).powi(2)).sqrt()
 }
 
-/// Circle outline kept below `cut`, for the microphone cradle. Arms short of
-/// the diameter stop it reading as leaves either side of the head.
 fn sd_arc(px: f32, py: f32, radius: f32, cut: f32) -> f32 {
     if py >= cut {
         return ((px * px + py * py).sqrt() - radius).abs();
@@ -215,14 +197,10 @@ fn sd_arc(px: f32, py: f32, radius: f32, cut: f32) -> f32 {
     tip(-tip_x).min(tip(tip_x))
 }
 
-/// Anti-aliased coverage for a distance field, one logical pixel wide.
 fn coverage(distance: f32, scale: f32) -> f32 {
     (0.5 - distance * scale).clamp(0.0, 1.0)
 }
 
-/// Animation state between frames. Mirrors the Quickshell waveform so both
-/// move identically: exponential glide, per-tick phase, and a sqrt curve
-/// because speech sits low in 0..1.
 #[derive(Debug, Clone)]
 pub struct Renderer {
     pub theme: Theme,
@@ -243,11 +221,9 @@ impl Renderer {
         }
     }
 
-    /// One tick. `phase` decides colour and whether bars are level-driven.
     pub fn advance(&mut self, phase: Phase, level: f32) {
         let target = match phase {
             Phase::Recording => level.clamp(0.0, 1.0),
-            // Not capturing: drive bars from animation, not a flat line.
             Phase::Processing => 0.45,
             Phase::Paused => 0.08,
             _ => 0.0,
@@ -307,7 +283,6 @@ impl Renderer {
             .collect();
 
         for y in 0..canvas.height {
-            // Sample at pixel centres in logical space.
             let py = (y as f32 + 0.5) / scale;
             for x in 0..canvas.width {
                 let px = (x as f32 + 0.5) / scale;
@@ -324,7 +299,6 @@ impl Renderer {
                     continue;
                 }
                 canvas.blend(x, y, island, inside);
-                // Hairline edge, for readability on light wallpapers.
                 let edge = coverage(outer.abs() - 0.5, scale) * inside;
                 if edge > 0.0 {
                     canvas.blend(x, y, border, edge);
@@ -351,12 +325,8 @@ impl Renderer {
         }
     }
 
-    /// Capsule head, cradle, stem, base, in a 16-unit box scaled to
-    /// `layout.icon`. The head must clear the cradle by over a pixel at 1x, or
-    /// anti-aliasing welds them into a blob.
     fn icon_distance(&self, px: f32, py: f32) -> f32 {
         let unit = self.layout.icon / 16.0;
-        // Nudge down so the glyph is optically centred against the bars.
         let (px, py) = (px / unit, py / unit + 0.4);
         let stroke = 0.75;
 
@@ -395,7 +365,6 @@ mod tests {
         let renderer = Renderer::new(Theme::default(), Layout::default());
         renderer.draw(&mut canvas, Phase::Recording);
         assert!(alpha_at(&canvas, 86, 18) > 240);
-        // The radius has to actually cut the corner away.
         assert_eq!(alpha_at(&canvas, 0, 0), 0);
         assert_eq!(alpha_at(&canvas, 171, 35), 0);
     }
@@ -409,7 +378,6 @@ mod tests {
             quiet.advance(Phase::Recording, 0.0);
             loud.advance(Phase::Recording, 1.0);
         }
-        // Same phase, so only the amplitude differs.
         loud.wave = quiet.wave;
         assert!(loud.amplitude() > quiet.amplitude() + 0.5);
     }

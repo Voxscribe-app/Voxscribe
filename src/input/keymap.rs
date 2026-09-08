@@ -1,12 +1,8 @@
-//! Key-name and character tables shared by the hotkey listener and the
-//! virtual keyboard.
-
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use evdev::KeyCode;
 
-/// Ignored when deciding whether an "extra" key is held.
 pub const MODIFIERS: &[KeyCode] = &[
     KeyCode::KEY_LEFTCTRL,
     KeyCode::KEY_RIGHTCTRL,
@@ -187,7 +183,6 @@ fn aliases() -> &'static HashMap<&'static str, KeyCode> {
     })
 }
 
-/// Accepts aliases (`super`, `pgdn`) and evdev names (`KEY_COMMA`).
 pub fn key_from_name(name: &str) -> Option<KeyCode> {
     let cleaned = name.trim().trim_matches(['<', '>']).to_ascii_lowercase();
     if cleaned.is_empty() {
@@ -200,8 +195,6 @@ pub fn key_from_name(name: &str) -> Option<KeyCode> {
     aliases().get(stripped).copied()
 }
 
-/// Parse `SUPER+ALT+D` into its keys. `Err` names the bad token, rather than
-/// silently binding something unexpected.
 pub fn parse_chord(chord: &str) -> Result<Vec<KeyCode>, String> {
     let mut keys = Vec::new();
     for part in chord.split('+') {
@@ -231,8 +224,6 @@ pub fn chord_to_string(keys: &[KeyCode]) -> String {
         .join("+")
 }
 
-/// Keystroke for a character on US QWERTY. Anything outside this table has to
-/// take the clipboard path.
 pub fn char_to_key(c: char) -> Option<(KeyCode, bool)> {
     use KeyCode as K;
     let plain = |k: KeyCode| Some((k, false));
@@ -299,7 +290,6 @@ pub fn is_typable(text: &str) -> bool {
     text.chars().all(|c| char_to_key(c).is_some())
 }
 
-/// Deduplicated characters that need the clipboard.
 pub fn untypable_chars(text: &str) -> Vec<char> {
     let mut seen = Vec::new();
     for c in text.chars() {

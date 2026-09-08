@@ -1,42 +1,31 @@
-//! Energy-based VAD for continuous mode and auto-stop-on-silence. Only has to
-//! answer "is the speaker still talking", within the capture thread's budget.
-
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadState {
-    /// No speech heard yet this session.
     Waiting,
     Speaking,
-    /// Speech has stopped but the silence window has not elapsed.
     Trailing,
-    /// Silence window elapsed after speech: the segment is complete.
     SegmentComplete,
 }
 
 #[derive(Debug, Clone)]
 pub struct Vad {
     threshold: f32,
-    /// Silence required after speech before a segment is closed.
     silence: Duration,
-    /// Speech required before arming; rejects key clicks.
     min_speech: Duration,
     state: VadState,
     speech_elapsed: Duration,
     silence_elapsed: Duration,
-    /// Rolling noise floor, used when `threshold` is auto-calibrated.
     noise_floor: f32,
     calibrating: bool,
     calibration_elapsed: Duration,
 }
 
-/// Margin above the measured noise floor that counts as speech.
 const NOISE_FLOOR_MARGIN: f32 = 3.0;
 const CALIBRATION_WINDOW: Duration = Duration::from_millis(500);
 const MIN_AUTO_THRESHOLD: f32 = 0.004;
 
 impl Vad {
-    /// `threshold` of 0 auto-calibrates from the first half second of audio.
     pub fn new(threshold: f32, silence: Duration, min_speech: Duration) -> Self {
         Self {
             threshold: if threshold > 0.0 {
@@ -63,7 +52,6 @@ impl Vad {
         self.threshold
     }
 
-    /// True once speech has been detected at least once this session.
     pub fn heard_speech(&self) -> bool {
         !matches!(self.state, VadState::Waiting)
     }
@@ -74,10 +62,8 @@ impl Vad {
         self.silence_elapsed = Duration::ZERO;
     }
 
-    /// Feed one buffer's RMS and the duration it covered.
     pub fn push(&mut self, rms: f32, dt: Duration) -> VadState {
         if self.calibrating {
-            // Minimum, not average: the user will not stay silent.
             self.noise_floor = if self.calibration_elapsed.is_zero() {
                 rms
             } else {
@@ -116,7 +102,6 @@ impl Vad {
                     };
                 }
             }
-            // Terminal until the caller resets.
             VadState::SegmentComplete => {}
         }
         self.state
@@ -188,7 +173,6 @@ mod tests {
             "threshold {} did not clear the noise floor",
             vad.threshold()
         );
-        // Room tone at the calibrated level must not read as speech.
         vad.reset();
         assert_eq!(feed(&mut vad, 0.02, 10), VadState::Waiting);
     }

@@ -85,7 +85,6 @@ fn find_python() -> Result<String> {
     bail!("Python 3.12+ was not found; install Python 3.12 or uv")
 }
 
-/// Creates the venv with a CUDA 12.6 PyTorch, which still has sm_61 kernels.
 pub fn setup(paths: &Paths, force: bool) -> Result<()> {
     std::fs::create_dir_all(&paths.data_dir)
         .with_context(|| format!("creating {}", paths.data_dir.display()))?;
@@ -306,7 +305,6 @@ fn message(value: &Value) -> &str {
         .unwrap_or("unknown worker error")
 }
 
-/// 16 kHz mono s16le wrapper; the worker reads it via soundfile.
 fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
     let data_len = pcm.len() as u32;
     let mut out = Vec::with_capacity(44 + pcm.len());
@@ -314,12 +312,12 @@ fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&(36 + data_len).to_le_bytes());
     out.extend_from_slice(b"WAVEfmt ");
     out.extend_from_slice(&16u32.to_le_bytes());
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
     out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // byte rate
-    out.extend_from_slice(&2u16.to_le_bytes()); // block align
-    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_len.to_le_bytes());
     out.extend_from_slice(pcm);

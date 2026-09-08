@@ -1,51 +1,36 @@
-//! Recording-session decision logic, I/O-free so every mode can be asserted
-//! directly rather than debugged through a microphone.
-
 use std::time::Duration;
 
 use crate::core::config::RecordingMode;
 use crate::input::hotkeys::Binding;
 
-/// What the daemon should do in response to an input event.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     Nothing,
-    Start {
-        language: Option<String>,
-    },
-    /// Stop capturing and transcribe.
+    Start { language: Option<String> },
     Stop,
-    /// Stop capturing and throw the audio away.
     Cancel,
-    /// Long-form: finish and transcribe every segment.
     Submit,
     Pause,
     Resume,
 }
 
-/// Recording state as the session machine sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionPhase {
     Idle,
     Recording,
-    /// Long-form recording held open between segments.
     Paused,
 }
 
 #[derive(Debug, Clone)]
 pub struct SessionRules {
     pub mode: RecordingMode,
-    /// Hold shorter than this counts as a tap in [`RecordingMode::Auto`].
     pub tap_threshold: Duration,
     pub secondary_language: Option<String>,
 }
 
-/// Extra state that only the hybrid tap/hold mode needs.
 #[derive(Debug, Clone, Default)]
 pub struct AutoModeState {
-    /// Tapped on, so the next press stops it.
     pub latched: bool,
-    /// Began on this press, so a release may still end it.
     pub started_this_press: bool,
 }
 
@@ -94,7 +79,6 @@ pub fn on_press(
                 auto.latched = false;
                 Action::Start { language }
             }
-            // Latched ends on the next press, held ends on release.
             _ => {
                 auto.started_this_press = false;
                 if auto.latched {
@@ -135,7 +119,6 @@ pub fn on_release(
             }
             auto.started_this_press = false;
             if held < rules.tap_threshold {
-                // A tap latches on; the key is not being held.
                 auto.latched = true;
                 Action::Nothing
             } else {
@@ -218,7 +201,6 @@ mod tests {
             press(RecordingMode::Auto, SessionPhase::Idle, &mut auto),
             Action::Start { language: None }
         );
-        // Quick release latches on rather than stopping.
         assert_eq!(
             on_release(
                 &rules(RecordingMode::Auto),
@@ -230,7 +212,6 @@ mod tests {
             Action::Nothing
         );
         assert!(auto.latched);
-        // The next press ends it.
         assert_eq!(
             press(RecordingMode::Auto, SessionPhase::Recording, &mut auto),
             Action::Stop
@@ -269,7 +250,6 @@ mod tests {
             press(RecordingMode::Auto, SessionPhase::Recording, &mut auto),
             Action::Stop
         );
-        // Releasing the key that stopped recording must not restart it.
         assert_eq!(
             on_release(
                 &rules(RecordingMode::Auto),

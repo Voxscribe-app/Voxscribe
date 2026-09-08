@@ -1,7 +1,3 @@
-//! Global shortcuts from evdev, so one path serves every compositor. Each
-//! keyboard gets a reader thread; one supervisor owns the pressed-key set, so a
-//! chord spanning two devices still resolves.
-
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,7 +32,6 @@ pub struct BindingSpec {
     pub keys: Vec<KeyCode>,
 }
 
-/// Resolve the configured chords, reporting (but not failing on) bad entries.
 pub fn resolve_bindings(shortcuts: &Shortcuts) -> (Vec<BindingSpec>, Vec<String>) {
     let mut specs = Vec::new();
     let mut problems = Vec::new();
@@ -80,7 +75,6 @@ pub fn resolve_bindings(shortcuts: &Shortcuts) -> (Vec<BindingSpec>, Vec<String>
         &mut problems,
     );
 
-    // Longer chords first: SUPER+ALT+D must beat a bound SUPER+D.
     specs.sort_by_key(|spec| std::cmp::Reverse(spec.keys.len()));
     (specs, problems)
 }
@@ -88,12 +82,10 @@ pub fn resolve_bindings(shortcuts: &Shortcuts) -> (Vec<BindingSpec>, Vec<String>
 #[derive(Clone, Copy)]
 struct RawKey {
     key: KeyCode,
-    /// 0 release, 1 press, 2 autorepeat.
     value: i32,
     relay: bool,
 }
 
-/// Everything the supervisor needs to keep running, shared with reader threads.
 struct Shared {
     stop: AtomicBool,
     grab: bool,
@@ -102,11 +94,9 @@ struct Shared {
 
 pub struct HotkeyListener {
     shared: Arc<Shared>,
-    devices: Arc<Mutex<HashMap<PathBuf, ()>>>,
 }
 
 impl HotkeyListener {
-    /// Returns immediately; the work runs on dedicated threads.
     pub fn start(
         shortcuts: &Shortcuts,
         specs: Vec<BindingSpec>,
@@ -117,8 +107,6 @@ impl HotkeyListener {
         }
 
         let passthrough = if shortcuts.grab_keys {
-            // Grabbed devices stop feeding the compositor, so non-shortcut
-            // events must be re-emitted through our own device.
             Some(Mutex::new(
                 VirtualKeyboard::open(Duration::ZERO)
                     .context("creating the passthrough virtual keyboard")?,
@@ -153,7 +141,6 @@ impl HotkeyListener {
 
         {
             let shared = Arc::clone(&shared);
-            let devices = Arc::clone(&devices);
             let hotplug = shortcuts.hotplug;
             std::thread::Builder::new()
                 .name("duskr-kbd-scan".into())
@@ -161,11 +148,7 @@ impl HotkeyListener {
                 .context("spawning the keyboard scanner")?;
         }
 
-        Ok(Self { shared, devices })
-    }
-
-    pub fn device_count(&self) -> usize {
-        self.devices.lock().map(|d| d.len()).unwrap_or(0)
+        Ok(Self { shared })
     }
 
     pub fn stop(&self) {
@@ -195,7 +178,6 @@ impl DeviceFilter {
         let Some(supported) = device.supported_keys() else {
             return false;
         };
-        // Grabbing a device that cannot produce the chord only steals input.
         if !self
             .required_keys
             .iter()
@@ -270,7 +252,6 @@ fn scan_loop(
         if !hotplug {
             return;
         }
-        // Polling avoids a udev dependency; two seconds is imperceptible.
         std::thread::sleep(Duration::from_secs(2));
     }
 }
@@ -292,7 +273,6 @@ fn enumerate_keyboards() -> Vec<(PathBuf, Device)> {
         let Ok(device) = Device::open(&path) else {
             continue;
         };
-        // Reading back our own device would loop transcripts into the matcher.
         if device.name().is_some_and(|name| {
             let name = name.to_ascii_lowercase();
             name.starts_with("duskr ") || name.contains("ydotool") || name.contains("wtype")
@@ -453,7 +433,6 @@ fn relay_key(shared: &Shared, raw: RawKey) {
     }
 }
 
-/// Chord state machine, I/O-free so it can be tested directly.
 pub struct ChordMatcher {
     specs: Vec<BindingSpec>,
     pressed: HashSet<KeyCode>,
@@ -486,7 +465,6 @@ impl ChordMatcher {
             0 => {
                 self.pressed.remove(&key);
             }
-            // Autorepeat carries no state change; a held chord must not refire.
             _ => return Vec::new(),
         }
 
@@ -506,7 +484,6 @@ impl ChordMatcher {
                 out.push(HotkeyEvent::Released(active));
             }
             (Some(active), Some(binding)) if active != binding => {
-                // Growing SUPER+D into SUPER+ALT+D swaps the held binding.
                 self.active = Some(binding);
                 out.push(HotkeyEvent::Released(active));
                 out.push(HotkeyEvent::Pressed(binding));
@@ -529,8 +506,6 @@ impl ChordMatcher {
             if !spec.keys.iter().all(|key| self.pressed.contains(key)) {
                 continue;
             }
-            // Extra modifiers mean a different shortcut; extra plain keys are
-            // ignored, so typing while held still works.
             let extra_modifiers = self
                 .pressed
                 .iter()

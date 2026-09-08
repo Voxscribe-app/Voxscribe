@@ -1,8 +1,3 @@
-//! Persistent `/dev/uinput` virtual keyboard, created once at daemon start -
-//! compositors need a moment to notice a new keyboard, so a per-dictation
-//! device would drop the first characters. Real evdev events, so no wtype or
-//! ydotool.
-
 use std::io;
 use std::time::Duration;
 
@@ -14,14 +9,11 @@ const KEY_UP: i32 = 0;
 
 pub struct VirtualKeyboard {
     device: VirtualDevice,
-    /// Rate-limited consumers drop characters without this.
     key_delay: Duration,
 }
 
 impl VirtualKeyboard {
     pub fn open(key_delay: Duration) -> io::Result<Self> {
-        // This device re-emits for grabbed keyboards, so it must be able to
-        // express any key they send.
         let mut keys = AttributeSet::<KeyCode>::new();
         for code in 1u16..=248 {
             keys.insert(KeyCode::new(code));
@@ -47,7 +39,6 @@ impl VirtualKeyboard {
         self.emit(&[InputEvent::new(EventType::KEY.0, key.code(), value)])
     }
 
-    /// Re-emit verbatim, so grabbed keyboards still reach the compositor.
     pub fn passthrough(&mut self, event_type: u16, code: u16, value: i32) -> io::Result<()> {
         self.emit(&[InputEvent::new(event_type, code, value)])
     }
@@ -57,7 +48,6 @@ impl VirtualKeyboard {
         self.key(key, KEY_UP)
     }
 
-    /// Press `chord` in order, then release in reverse order.
     pub fn chord(&mut self, keys: &[KeyCode]) -> io::Result<()> {
         for key in keys {
             self.key(*key, KEY_DOWN)?;
@@ -70,8 +60,6 @@ impl VirtualKeyboard {
         Ok(())
     }
 
-    /// Returns the count emitted. Characters with no US-layout keystroke are
-    /// skipped for the caller to route through the clipboard.
     pub fn type_text(&mut self, text: &str) -> io::Result<usize> {
         let mut typed = 0usize;
         let mut shift_held = false;
@@ -81,7 +69,6 @@ impl VirtualKeyboard {
                 continue;
             };
 
-            // Toggle shift only on change, not three events per character.
             if needs_shift != shift_held {
                 self.key(
                     KeyCode::KEY_LEFTSHIFT,
@@ -105,8 +92,6 @@ impl VirtualKeyboard {
         Ok(typed)
     }
 
-    /// Called before injecting, so a held push-to-talk chord cannot turn the
-    /// transcript into shortcuts.
     pub fn release_modifiers(&mut self) -> io::Result<()> {
         for key in super::keymap::MODIFIERS {
             self.key(*key, KEY_UP)?;
@@ -121,7 +106,6 @@ fn spin(delay: Duration) {
     }
 }
 
-/// Why `/dev/uinput` is unusable, in terms the user can act on.
 pub fn diagnose() -> Result<(), String> {
     let path = std::path::Path::new("/dev/uinput");
     if !path.exists() {

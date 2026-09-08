@@ -88,10 +88,6 @@ impl StateWriter {
         }
     }
 
-    pub fn write_transcript_preview(&self, text: &str) {
-        let _ = paths::write_atomic(&paths::transcript_preview_file(), text.as_bytes());
-    }
-
     pub fn cleanup(&self) {
         for path in [
             paths::state_file(),
