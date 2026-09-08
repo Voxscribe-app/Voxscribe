@@ -66,8 +66,8 @@ pub fn transcript_preview_file() -> PathBuf {
     runtime_dir().join("transcript_preview")
 }
 
-/// Mirror of [`state_file`]/[`audio_level_file`] under the config directory, kept
-/// for shell integrations that poll a stable path (Waybar, ad-hoc scripts).
+/// Mirrored under the config directory for integrations that poll a stable
+/// path.
 pub fn legacy_state_file() -> PathBuf {
     config_dir().join("recording_status")
 }
@@ -92,7 +92,7 @@ pub fn ensure_dir(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)
 }
 
-/// Create `path` if missing and force mode 0700; sockets and transcripts live here.
+/// Create if missing and force mode 0700.
 pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)?;
     let mut perms = fs::metadata(path)?.permissions();
@@ -103,7 +103,7 @@ pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Write via a sibling temp file + rename so readers never observe a partial file.
+/// Temp file + rename, so readers never see a partial file.
 pub fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

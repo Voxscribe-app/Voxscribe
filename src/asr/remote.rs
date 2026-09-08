@@ -1,14 +1,9 @@
 //! Remote HTTP ASR (Parakeet and compatible servers).
 //!
-//! The fast path posts raw 16 kHz mono s16le with no container and no
-//! base64 - the audio is already in the exact shape the model wants, so
-//! writing a temporary WAV would only add work at both ends. Connections are
-//! pooled and kept alive, and optionally warmed at daemon start, so a dictation
-//! never pays for a TCP handshake.
-//!
-//! `multipart` remains available for servers that only accept a WAV upload,
-//! `openai` targets the OpenAI `/v1/audio/transcriptions` schema that most
-//! third-party voice backends expose, and `auto` probes once and remembers.
+//! The fast path posts raw 16 kHz mono s16le - already the shape the model
+//! wants, so a temporary WAV would only add work at both ends. `multipart`
+//! covers servers that need a WAV upload, `openai` the
+//! `/v1/audio/transcriptions` schema, and `auto` probes once and remembers.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -25,12 +20,10 @@ use crate::core::config::{RemoteConfig, RemoteProtocol};
 
 const PCM_CONTENT_TYPE: &str = "audio/l16; rate=16000; channels=1";
 const PCM_SAMPLE_RATE: u32 = 16_000;
-/// The OpenAI schema requires a model name. Servers that serve a single fixed
-/// model ignore it, so this is only a placeholder for when none is configured.
+/// The OpenAI schema requires a model name; single-model servers ignore it.
 const OPENAI_DEFAULT_MODEL: &str = "whisper-1";
 
-/// Resolved wire format, stored as an atom so `auto` can settle itself without
-/// a lock on the transcription path.
+/// Atomic so `auto` can settle without a lock on the transcription path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Wire {
     Unknown = 0,
@@ -50,8 +43,7 @@ impl Wire {
     }
 }
 
-/// The server is saying it does not serve this route, not that transcription
-/// failed, so the caller is free to try another shape.
+/// Route absent rather than transcription failed, so another shape may work.
 fn route_absent(status: StatusCode) -> bool {
     matches!(
         status,
@@ -111,8 +103,7 @@ impl RemoteBackend {
         let client = Client::builder()
             .default_headers(headers)
             .timeout(timeout)
-            // Latency, not throughput: a half-second of Nagle buffering would
-            // dwarf the inference time.
+            // Latency, not throughput: Nagle would dwarf the inference time.
             .tcp_nodelay(true)
             .pool_idle_timeout(Duration::from_secs(600))
             .pool_max_idle_per_host(4)
@@ -172,8 +163,7 @@ impl RemoteBackend {
         Ok(Some(read_text(response).await?))
     }
 
-    /// `/v1/audio/transcriptions`, avoiding a doubled prefix when the configured
-    /// base URL already ends in `/v1`.
+    /// Avoids a doubled prefix when the base URL already ends in `/v1`.
     fn openai_path(&self) -> &'static str {
         if self.base_url.ends_with("/v1") {
             "/audio/transcriptions"
@@ -244,8 +234,8 @@ impl RemoteBackend {
     }
 }
 
-/// The wire format is fixed at 16 kHz mono; PipeWire already gives us that, so
-/// this is a no-op for live capture and only does work for imported files.
+/// No-op for live capture, which is already 16 kHz mono; only imported files
+/// need work.
 fn resample_for_wire(samples: &[f32], sample_rate: u32) -> Vec<f32> {
     wav::resample(samples, sample_rate, PCM_SAMPLE_RATE)
 }
@@ -306,8 +296,8 @@ impl Backend for RemoteBackend {
             return Ok(());
         }
 
-        // Open the connection now so the first dictation is pure inference time.
-        // A server without /health is fine - the handshake is the point.
+        // Handshake now, so the first dictation is pure inference time. A
+        // server without /health is fine.
         let result = tokio::time::timeout(
             self.timeout.min(Duration::from_secs(5)),
             self.client.get(self.url("/health")).send(),
@@ -352,8 +342,7 @@ impl Backend for RemoteBackend {
                     self.openai_path()
                 )
             })?,
-            // Probe cheapest first, then the common OpenAI schema, then the
-            // legacy upload. Whichever answers is remembered for the session.
+            // Cheapest first; whichever answers is remembered for the session.
             Wire::Unknown => match self.post_pcm(&request).await {
                 Ok(Some(text)) => {
                     self.wire.store(Wire::Pcm as u8, Ordering::Relaxed);
@@ -372,8 +361,8 @@ impl Backend for RemoteBackend {
                     }
                 },
                 Err(err) => {
-                    // A transport failure says nothing about which route the
-                    // server supports, so the probe stays unresolved.
+                    // Transport failure says nothing about the route; stay
+                    // unresolved.
                     return Err(err);
                 }
             },
@@ -562,7 +551,7 @@ mod tests {
         assert_eq!(transcript.text, "hello");
     }
 
-    /// Serves `responses` in order, handing each raw request back on a channel.
+    /// Serves `responses` in order, echoing each raw request on a channel.
     async fn serve(
         responses: Vec<(u16, &'static str)>,
     ) -> (String, tokio::sync::mpsc::Receiver<String>) {

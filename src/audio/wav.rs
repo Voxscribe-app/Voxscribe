@@ -9,8 +9,7 @@ use anyhow::{Context, Result};
 pub fn to_pcm16(samples: &[f32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 2);
     for sample in samples {
-        // Clamp first: PipeWire can hand back values slightly outside [-1, 1]
-        // after resampling, and wrapping those would produce audible clicks.
+        // PipeWire can resample slightly outside [-1, 1]; wrapping clicks.
         let value = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
         out.extend_from_slice(&value.to_le_bytes());
     }
@@ -54,7 +53,7 @@ pub fn write_file(path: &Path, samples: &[f32], sample_rate: u32) -> Result<()> 
         .with_context(|| format!("writing {}", path.display()))
 }
 
-/// Decode a mono or multi-channel WAV to mono f32, reporting its sample rate.
+/// Decode any WAV to mono f32, reporting its sample rate.
 pub fn decode(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
     let mut reader = hound::WavReader::new(Cursor::new(bytes)).context("reading WAV data")?;
     let spec = reader.spec();
@@ -90,8 +89,7 @@ pub fn downmix(interleaved: &[f32], channels: usize) -> Vec<f32> {
         .collect()
 }
 
-/// Linear resampling. PipeWire negotiates the capture rate for us, so this only
-/// covers imported files (long-form segments, `duskr transcribe file.wav`).
+/// Linear resampling, only for imported files - live capture is negotiated.
 pub fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
     if from == to || from == 0 || samples.is_empty() {
         return samples.to_vec();
@@ -162,7 +160,7 @@ mod tests {
     fn resampling_preserves_the_signal_shape() {
         let samples: Vec<f32> = (0..480).map(|i| (i as f32 * 0.01).sin()).collect();
         let downsampled = resample(&samples, 48_000, 16_000);
-        // Every third input sample should survive nearly untouched.
+        // Every third input sample survives nearly untouched.
         for i in 0..downsampled.len().min(150) {
             assert!((downsampled[i] - samples[i * 3]).abs() < 0.02);
         }

@@ -30,10 +30,11 @@ Item {
             return
         if (action === "restart") {
             actionProcess.command = ["systemctl", "--user", "restart", "duskr.service"]
-        } else if (action === "record" || action === "toggle") {
+        } else if (action === "record" || action === "toggle"
+                   || action === "start" || action === "stop") {
             actionProcess.command = ["duskr", "toggle"]
-        } else if (action === "cancel" || action === "stop" || action === "start") {
-            actionProcess.command = ["duskr", action]
+        } else if (action === "cancel") {
+            actionProcess.command = ["duskr", "cancel"]
         } else {
             return
         }

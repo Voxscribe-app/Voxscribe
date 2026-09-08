@@ -1,10 +1,3 @@
-//! Detecting and adapting an existing Quickshell hyprwhspr integration.
-//!
-//! The lowest-risk migration replaces only the service file: the indicator,
-//! waveform, island and morph overlay all talk to it through the same five
-//! properties, so leaving them untouched keeps the shell working exactly as
-//! before while the data behind it comes from Duskr.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -14,9 +7,7 @@ use crate::core::paths;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Detection {
     pub root: PathBuf,
-    /// `services/HyprwhsprService.qml`, if present.
     pub service: Option<PathBuf>,
-    /// Other files referring to the service, which the adapter keeps working.
     pub dependents: Vec<PathBuf>,
 }
 
@@ -59,14 +50,9 @@ pub fn detect_in(root: &Path) -> Detection {
 pub struct InstallReport {
     pub service_written: PathBuf,
     pub backup: Option<PathBuf>,
-    /// Written alongside as the canonical native service.
     pub native_written: Option<PathBuf>,
 }
 
-/// Replace the hyprwhspr service with the Duskr-backed adapter.
-///
-/// The original is backed up first, and the native `DuskrService.qml` is
-/// written next to it so the shell can be moved over at leisure.
 pub fn install(detection: &Detection) -> Result<InstallReport> {
     let services_dir = detection.root.join("services");
     std::fs::create_dir_all(&services_dir)
@@ -142,7 +128,6 @@ mod tests {
 
         let installed = std::fs::read_to_string(&report.service_written).unwrap();
         assert!(installed.contains("duskr"));
-        // The property API the rest of the shell binds to must survive.
         for property in ["available", "state", "tooltip", "level", "levelActive"] {
             assert!(installed.contains(property), "{property} missing");
         }
@@ -155,10 +140,6 @@ mod tests {
         let dir = scaffold();
         let report = install(&detect_in(dir.path())).unwrap();
 
-        // `quickshell watch` interleaves {"level":...} lines with full status
-        // lines. Assigning every field on every line dropped the state to idle
-        // between level updates, which restarted the island morph ~8 times a
-        // second while recording.
         for path in [
             report.service_written.clone(),
             report.native_written.clone().unwrap(),

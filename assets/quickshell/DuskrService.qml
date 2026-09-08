@@ -31,13 +31,14 @@ Item {
     signal transcript(string text)
 
     // "record" and "restart" are accepted so widgets written against the
-    // hyprwhspr service need no edits.
+    // hyprwhspr service need no edits, and "start"/"stop" still resolve now
+    // that the CLI has only the one toggle.
     function perform(action) {
         const map = {
             "record": "toggle",
             "toggle": "toggle",
-            "start": "start",
-            "stop": "stop",
+            "start": "toggle",
+            "stop": "toggle",
             "cancel": "cancel",
             "submit": "submit",
             "restart": "restart"

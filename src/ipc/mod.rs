@@ -1,8 +1,3 @@
-//! IPC protocol shared by the daemon and every client (CLI, Quickshell, Waybar).
-//!
-//! Newline-delimited JSON over a private Unix socket: trivial to speak from a
-//! shell or from QML, and event-driven, so integrations do not have to poll.
-
 pub mod client;
 pub mod server;
 
@@ -15,7 +10,6 @@ use crate::core::state::{Event, Snapshot};
 pub enum Request {
     Ping,
     Status,
-    /// Stream state and level events until the connection closes.
     Subscribe,
     Toggle {
         #[serde(default)]
@@ -27,12 +21,9 @@ pub enum Request {
     },
     Stop,
     Cancel,
-    /// Long-form: finish the recording and transcribe every segment.
     Submit,
-    /// Long-form: hold the recording open without capturing.
     Pause,
     Resume,
-    /// Re-read the configuration file.
     Reload,
     SetBackend {
         id: String,
@@ -40,10 +31,9 @@ pub enum Request {
     SetModel {
         name: String,
     },
-    /// Free the model without stopping the daemon.
     ModelUnload,
     ModelReload,
-    /// Transcribe an audio file instead of the microphone.
+    ModelToggle,
     TranscribeFile {
         path: String,
     },

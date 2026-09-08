@@ -1,9 +1,6 @@
-//! Native PipeWire capture.
-//!
-//! PipeWire runs its own event loop on a dedicated thread; the async runtime
-//! never touches it. Samples land in a shared buffer and metering is published
-//! through atomics, so neither the ASR backend nor the IPC server can stall
-//! capture, and capture cannot stall them.
+//! Native PipeWire capture on its own thread. Samples land in a shared buffer
+//! and metering goes through atomics, so nothing here can stall the runtime or
+//! be stalled by it.
 
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -69,8 +66,7 @@ pub struct Capture {
 }
 
 impl Capture {
-    /// Start the capture thread. Returns once the stream has been created; the
-    /// `Started` event marks the point where samples are actually flowing.
+    /// Returns once the stream exists; `Started` marks samples flowing.
     pub fn start(config: &Audio, events: UnboundedSender<AudioEvent>) -> Result<Self> {
         let shared = Arc::new(Shared {
             level: AtomicU32::new(0),
@@ -150,7 +146,7 @@ impl Capture {
         mem::take(&mut *buffer)
     }
 
-    /// Take the buffer without stopping; used to flush a continuous-mode segment.
+    /// Take the buffer without stopping, to flush a continuous-mode segment.
     pub fn drain(&self) -> Vec<f32> {
         let mut buffer = self.shared.buffer.lock().expect("capture buffer poisoned");
         mem::take(&mut *buffer)
@@ -172,8 +168,7 @@ impl Capture {
         f32::from_bits(self.shared.raw_level.load(Ordering::Relaxed))
     }
 
-    /// Buffers delivered since arming. Zero after a second means the stream is
-    /// connected but not producing - a disconnected or asleep microphone.
+    /// Zero after a second means connected but not producing.
     pub fn frames(&self) -> u64 {
         self.shared.frames.load(Ordering::Relaxed)
     }
@@ -182,7 +177,7 @@ impl Capture {
         self.shared.running.load(Ordering::SeqCst)
     }
 
-    /// Tear down and rebuild the stream, for suspend/resume and device recovery.
+    /// Rebuild the stream, for suspend/resume and device recovery.
     pub fn reconnect(&self) {
         let _ = self.sender.send(Command::Reconnect);
     }
@@ -218,9 +213,7 @@ struct UserData {
 fn build_format_pod(config: &Audio) -> Result<Vec<u8>> {
     let mut info = spa::param::audio::AudioInfoRaw::new();
     info.set_format(spa::param::audio::AudioFormat::F32LE);
-    // Asking for exactly what the ASR backends want lets PipeWire's adapter do
-    // the resampling in-graph, which is both faster and better than anything we
-    // would write here.
+    // Asking for the ASR rate lets PipeWire resample in-graph.
     info.set_rate(config.sample_rate);
     info.set_channels(1);
 
@@ -390,8 +383,8 @@ fn run_loop(
         )
         .context("connecting the capture stream")?;
 
-    // Idle until the first recording unless the user asked to keep the mic warm;
-    // an always-active stream lights the desktop's microphone indicator.
+    // Idle until first use unless keepalive: an active stream lights the
+    // desktop's microphone indicator.
     if !config.keepalive {
         let _ = stream.set_active(false);
     }

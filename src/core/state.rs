@@ -1,8 +1,8 @@
-//! Observable daemon state.
-//!
-//! One `watch` channel carries the latest snapshot (late subscribers get the
-//! current value) and one `broadcast` channel carries discrete events. Nothing
-//! here blocks, so state updates never stall audio or IPC.
+//! Observable daemon state: a `watch` channel for the latest snapshot, a
+//! `broadcast` channel for discrete events. Nothing here blocks.
+
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, watch};
@@ -34,8 +34,7 @@ impl Phase {
         }
     }
 
-    /// Class name consumed by the Waybar/Quickshell adapters. `idle` maps to
-    /// hyprwhspr's `stopped` so existing stylesheets keep working.
+    /// `idle` maps to hyprwhspr's `stopped`, so old stylesheets keep working.
     pub fn css_class(self) -> &'static str {
         match self {
             Self::Starting => "starting",
@@ -52,7 +51,7 @@ impl Phase {
 pub struct Snapshot {
     pub phase: Phase,
     pub mode: String,
-    /// Smoothed capture level in 0.0..=1.0, 0 when not recording.
+    /// Smoothed 0.0..=1.0, 0 when not recording.
     pub level: f32,
     pub backend: String,
     pub model: Option<String>,
@@ -89,11 +88,14 @@ impl Default for Snapshot {
 }
 
 impl Snapshot {
-    /// Human-readable tooltip, matching the shape the Quickshell service expects.
+    /// Shape the Quickshell service expects.
     pub fn tooltip(&self) -> String {
         let mut lines = vec![match self.phase {
             Phase::Starting => "Duskr: starting".to_string(),
-            Phase::Idle => "Duskr: ready".to_string(),
+            Phase::Idle if self.ready => "Duskr: ready".to_string(),
+            // Idle but not ready means a deliberate unload.
+            Phase::Idle if self.message.is_empty() => "Duskr: model unloaded".to_string(),
+            Phase::Idle => format!("Duskr: {}", self.message),
             Phase::Recording => format!(
                 "Duskr: recording ({:.1}s)",
                 self.recording_ms as f64 / 1000.0
@@ -117,8 +119,8 @@ impl Snapshot {
     }
 }
 
-/// Discrete notifications for IPC subscribers. Snapshot deltas are separate so a
-/// slow subscriber can miss events without corrupting the visible state.
+/// Discrete notifications for IPC subscribers. Snapshot deltas stay separate,
+/// so a slow subscriber can miss events without corrupting visible state.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum Event {
@@ -130,6 +132,18 @@ pub enum Event {
     Transcript {
         text: String,
         final_: bool,
+    },
+    /// Diagnostic only, for `duskr doctor --watch`. Emitted even when the
+    /// transcript is dropped, so it can show why nothing was typed.
+    Pipeline {
+        raw: String,
+        /// After cleanup, overrides and spoken symbols.
+        processed: String,
+        /// Equal to `processed` when translation is off.
+        translated: String,
+        /// Empty when auto-detected, absent when no translation ran.
+        source: Option<String>,
+        target: Option<String>,
     },
     Injected {
         text: String,
@@ -144,13 +158,20 @@ pub enum Event {
 pub struct StateHandle {
     snapshot: watch::Sender<Snapshot>,
     events: broadcast::Sender<Event>,
+    /// Streaming IPC clients, so the native OSD knows if a widget already
+    /// shows Duskr's state.
+    watchers: Arc<AtomicUsize>,
 }
 
 impl StateHandle {
     pub fn new(initial: Snapshot) -> Self {
         let (snapshot, _) = watch::channel(initial);
         let (events, _) = broadcast::channel(256);
-        Self { snapshot, events }
+        Self {
+            snapshot,
+            events,
+            watchers: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     pub fn get(&self) -> Snapshot {
@@ -165,7 +186,7 @@ impl StateHandle {
         self.events.subscribe()
     }
 
-    /// Mutate the snapshot; a `State` event is emitted only if something changed.
+    /// Emits a `State` event only if something changed.
     pub fn update(&self, f: impl FnOnce(&mut Snapshot)) {
         let mut next = self.snapshot.borrow().clone();
         let before = next.clone();
@@ -177,8 +198,7 @@ impl StateHandle {
         let _ = self.events.send(Event::State(next));
     }
 
-    /// Level updates are high-frequency, so they bypass the snapshot-diff path
-    /// and are published as their own event.
+    /// High-frequency, so it bypasses the snapshot-diff path.
     pub fn set_level(&self, level: f32) {
         let level = level.clamp(0.0, 1.0);
         let changed = (self.snapshot.borrow().level - level).abs() > 0.002;
@@ -190,6 +210,30 @@ impl StateHandle {
 
     pub fn emit(&self, event: Event) {
         let _ = self.events.send(event);
+    }
+
+    /// Registers an event-stream client for as long as the guard lives.
+    pub fn watcher(&self) -> WatcherGuard {
+        self.watchers.fetch_add(1, Ordering::Relaxed);
+        WatcherGuard {
+            watchers: Arc::clone(&self.watchers),
+        }
+    }
+
+    pub fn watchers(&self) -> usize {
+        self.watchers.load(Ordering::Relaxed)
+    }
+}
+
+/// Decrements the watcher count however the connection ends, including on a
+/// write error part-way through a stream.
+pub struct WatcherGuard {
+    watchers: Arc<AtomicUsize>,
+}
+
+impl Drop for WatcherGuard {
+    fn drop(&mut self) {
+        self.watchers.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -231,6 +275,19 @@ mod tests {
     }
 
     #[test]
+    fn watchers_are_counted_while_their_guards_live() {
+        let state = StateHandle::new(Snapshot::default());
+        assert_eq!(state.watchers(), 0);
+        let first = state.watcher();
+        let second = state.watcher();
+        assert_eq!(state.watchers(), 2);
+        drop(first);
+        assert_eq!(state.watchers(), 1);
+        drop(second);
+        assert_eq!(state.watchers(), 0);
+    }
+
+    #[test]
     fn tooltip_reports_phase_and_backend() {
         let snapshot = Snapshot {
             phase: Phase::Recording,
@@ -242,6 +299,24 @@ mod tests {
         let tooltip = snapshot.tooltip();
         assert!(tooltip.starts_with("Duskr: recording (2.5s)"));
         assert!(tooltip.contains("remote · parakeet"));
+    }
+
+    #[test]
+    fn an_unloaded_model_does_not_still_report_itself_as_ready() {
+        let loaded = Snapshot {
+            phase: Phase::Idle,
+            ready: true,
+            ..Snapshot::default()
+        };
+        assert!(loaded.tooltip().starts_with("Duskr: ready"));
+
+        let unloaded = Snapshot {
+            phase: Phase::Idle,
+            ready: false,
+            message: "model unloaded".into(),
+            ..Snapshot::default()
+        };
+        assert!(unloaded.tooltip().starts_with("Duskr: model unloaded"));
     }
 
     #[test]

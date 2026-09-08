@@ -4,9 +4,9 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
-use crate::core::config::{Config, RemoteProtocol};
+use crate::core::config::{Config, OsdMode, RemoteProtocol};
 use crate::core::paths;
-use crate::core::state::{Event, Snapshot};
+use crate::core::state::{Event, Phase, Snapshot};
 use crate::integrations::statefiles::{self, StatusFile};
 use crate::ipc::{self, Request, Response};
 
@@ -25,8 +25,6 @@ struct Cli {
 enum Command {
     Daemon,
     Toggle(LanguageArg),
-    Start(LanguageArg),
-    Stop,
     Cancel,
     Pause,
     Resume,
@@ -37,9 +35,7 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    Transcribe {
-        path: PathBuf,
-    },
+    Transcribe { path: PathBuf },
     Backend {
         #[command(subcommand)]
         command: BackendCommand,
@@ -69,7 +65,14 @@ enum Command {
         #[command(subcommand)]
         command: ServiceCommand,
     },
-    Doctor,
+    Osd {
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+    },
+    Doctor {
+        #[arg(long)]
+        watch: bool,
+    },
 }
 
 #[derive(Args)]
@@ -104,9 +107,7 @@ enum ModelCommand {
         #[arg(long)]
         move_file: bool,
     },
-    Remove {
-        name: String,
-    },
+    Remove { name: String },
     Download {
         name: String,
         #[arg(long)]
@@ -114,6 +115,7 @@ enum ModelCommand {
     },
     Unload,
     Reload,
+    Toggle,
 }
 
 #[derive(Subcommand)]
@@ -124,12 +126,7 @@ enum ConfigCommand {
         #[arg(long)]
         force: bool,
     },
-    SetModel {
-        model: String,
-    },
-    SetBackend {
-        backend: String,
-    },
+    SetModel { model: String },
     SetRemote(RemoteArgs),
 }
 
@@ -168,8 +165,6 @@ enum MigrateCommand {
 
 #[derive(Subcommand)]
 enum QuickshellCommand {
-    Status,
-    AudioLevel,
     Watch,
     Install,
 }
@@ -206,13 +201,6 @@ async fn run_with(cli: Cli) -> Result<()> {
             })
             .await
         }
-        Command::Start(arg) => {
-            call(Request::Start {
-                language: arg.language,
-            })
-            .await
-        }
-        Command::Stop => call(Request::Stop).await,
         Command::Cancel => call(Request::Cancel).await,
         Command::Pause => call(Request::Pause).await,
         Command::Resume => call(Request::Resume).await,
@@ -234,7 +222,8 @@ async fn run_with(cli: Cli) -> Result<()> {
         Command::Waybar(arg) => shell_stream(arg.watch, true).await,
         Command::Integration { command } => integration(command),
         Command::Service { command } => service(command).await,
-        Command::Doctor => doctor().await,
+        Command::Osd { seconds } => osd_preview(seconds),
+        Command::Doctor { watch } => doctor(watch).await,
     }
 }
 
@@ -366,6 +355,7 @@ async fn model(command: ModelCommand) -> Result<()> {
         }
         ModelCommand::Unload => call(Request::ModelUnload).await,
         ModelCommand::Reload => call(Request::ModelReload).await,
+        ModelCommand::Toggle => call(Request::ModelToggle).await,
     }
 }
 
@@ -396,7 +386,6 @@ async fn config(command: ConfigCommand) -> Result<()> {
             Ok(())
         }
         ConfigCommand::SetModel { model } => set_model(&model).await,
-        ConfigCommand::SetBackend { backend } => set_backend(&backend).await,
         ConfigCommand::SetRemote(args) => {
             let mut config = Config::load_or_default();
             config.asr.backend = "remote".into();
@@ -490,12 +479,6 @@ async fn migrate(command: MigrateCommand) -> Result<()> {
 
 async fn quickshell(command: QuickshellCommand) -> Result<()> {
     match command {
-        QuickshellCommand::Status => shell_stream(false, false).await,
-        QuickshellCommand::AudioLevel => {
-            let mut client = ipc::client::Client::connect().await?;
-            println!("{:.3}", client.status().await?.level);
-            Ok(())
-        }
         QuickshellCommand::Watch => shell_stream(true, false).await,
         QuickshellCommand::Install => {
             let report =
@@ -626,7 +609,29 @@ fn print_systemctl(result: Result<String>) -> Result<()> {
     Ok(())
 }
 
-async fn doctor() -> Result<()> {
+fn osd_preview(seconds: u64) -> Result<()> {
+    let mut config = Config::load_or_default().osd;
+    config.enabled = OsdMode::On;
+    let osd = crate::integrations::osd::Osd::start(&config).context(
+        "no native OSD here: needs a Wayland session whose compositor supports zwlr_layer_shell_v1",
+    )?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(seconds.clamp(1, 120));
+    let mut tick = 0.0f32;
+    while std::time::Instant::now() < deadline {
+        osd.update(Phase::Recording, 0.35 + 0.35 * (tick / 6.0).sin());
+        std::thread::sleep(Duration::from_millis(40));
+        tick += 1.0;
+    }
+    Ok(())
+}
+
+async fn doctor(watch: bool) -> Result<()> {
+    let config = Config::load();
+    let translation = match &config {
+        Ok(config) => config.translation.target_code(),
+        Err(_) => None,
+    };
+
     let mut failed = false;
     let checks = [
         (
@@ -643,7 +648,7 @@ async fn doctor() -> Result<()> {
         ),
         (
             "configuration",
-            Config::load().is_ok(),
+            config.is_ok(),
             paths::config_file().display().to_string(),
         ),
         (
@@ -651,15 +656,78 @@ async fn doctor() -> Result<()> {
             ipc::client::is_running().await,
             paths::socket_path().display().to_string(),
         ),
+        (
+            "translation",
+            true,
+            match &translation {
+                Some(target) => format!("transcripts translated into {target}"),
+                None => "off".to_string(),
+            },
+        ),
     ];
     for (name, ok, detail) in checks {
         println!("{} {name}: {detail}", if ok { "ok" } else { "fail" });
         failed |= !ok;
     }
-    if failed {
-        bail!("one or more checks failed");
+
+    if !watch {
+        if failed {
+            bail!("one or more checks failed");
+        }
+        return Ok(());
     }
-    Ok(())
+
+    println!("\nwatching the transcript pipeline; press Ctrl-C to stop");
+    watch_pipeline().await
+}
+
+async fn watch_pipeline() -> Result<()> {
+    let mut client = ipc::client::Client::connect().await?;
+    client
+        .subscribe(|event| {
+            match event {
+                Event::Pipeline {
+                    raw,
+                    processed,
+                    translated,
+                    source,
+                    target,
+                } => {
+                    println!("\n--- {} ---", chrono::Local::now().format("%H:%M:%S"));
+                    println!("  model      {}", quoted(&raw));
+                    if processed != raw {
+                        println!("  processed  {}", quoted(&processed));
+                    }
+                    match (source, target) {
+                        (Some(source), Some(target)) => {
+                            let from = if source.is_empty() {
+                                "auto".to_string()
+                            } else {
+                                source
+                            };
+                            println!("  translated {} ({from} -> {target})", quoted(&translated));
+                        }
+                        _ => println!("  translated (translation off)"),
+                    }
+                    if translated.is_empty() {
+                        println!("  nothing was typed");
+                    }
+                }
+                Event::Injected { text } => println!("  typed      {}", quoted(&text)),
+                Event::Error { message } => println!("  error      {message}"),
+                Event::Shutdown => {
+                    println!("daemon stopped");
+                    return Ok(false);
+                }
+                _ => {}
+            }
+            Ok(true)
+        })
+        .await
+}
+
+fn quoted(text: &str) -> String {
+    format!("{:?}", text)
 }
 
 fn pipewire_socket() -> PathBuf {
@@ -691,14 +759,27 @@ mod tests {
     fn required_commands_parse() {
         for args in [
             vec!["duskr", "toggle"],
-            vec!["duskr", "start"],
+            vec!["duskr", "toggle", "--language", "fr"],
             vec!["duskr", "model", "directory"],
             vec!["duskr", "model", "add", "/tmp/model.bin"],
             vec!["duskr", "config", "set-model", "medium.en"],
             vec!["duskr", "migrate", "hyprwhspr", "--no-start"],
-            vec!["duskr", "quickshell", "audio-level"],
+            vec!["duskr", "quickshell", "watch"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
+        }
+    }
+
+    #[test]
+    fn retired_commands_are_gone() {
+        for args in [
+            vec!["duskr", "start"],
+            vec!["duskr", "stop"],
+            vec!["duskr", "quickshell", "status"],
+            vec!["duskr", "quickshell", "audio-level"],
+            vec!["duskr", "config", "set-backend", "whisper"],
+        ] {
+            assert!(Cli::try_parse_from(args).is_err());
         }
     }
 

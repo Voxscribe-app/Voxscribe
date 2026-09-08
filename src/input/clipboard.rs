@@ -1,9 +1,6 @@
-//! Wayland clipboard access over `zwlr_data_control_manager_v1`.
-//!
-//! Only reached when a transcript contains characters the virtual keyboard
-//! cannot express. The previous selection is read first and re-offered
-//! afterwards, so dictating an em-dash never costs the user what they had
-//! copied. Talking the protocol directly avoids shelling out to wl-clipboard.
+//! Wayland clipboard over `zwlr_data_control_manager_v1`, for characters the
+//! virtual keyboard cannot express. The previous selection is read first and
+//! re-offered after, so dictating an em-dash costs nothing.
 
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
@@ -55,7 +52,7 @@ struct State {
     /// Mimes advertised by the current selection offer.
     offer_mimes: Vec<(ZwlrDataControlOfferV1, Vec<String>)>,
     current_offer: Option<Option<ZwlrDataControlOfferV1>>,
-    /// Set once the compositor has replaced our source with someone else's.
+    /// Set once the compositor replaced our source with someone else's.
     source_cancelled: bool,
     /// Payload served in response to `send` requests.
     serving: Option<Arc<Selection>>,
@@ -117,8 +114,7 @@ impl Dispatch<ZwlrDataControlDeviceV1, ()> for State {
         }
     }
 
-    // The compositor creates the offer object, so the queue needs to know how to
-    // route its events before we ever see it.
+    // The compositor creates the offer, so routing must exist beforehand.
     wayland_client::event_created_child!(State, ZwlrDataControlDeviceV1, [
         zwlr_data_control_device_v1::EVT_DATA_OFFER_OPCODE => (ZwlrDataControlOfferV1, ()),
     ]);
@@ -155,8 +151,7 @@ impl Dispatch<ZwlrDataControlSourceV1, ()> for State {
                 let Some(selection) = state.serving.clone() else {
                     return;
                 };
-                // The receiver may go away mid-write; a broken pipe here is
-                // normal and must not take the daemon down.
+                // Receiver may vanish mid-write; a broken pipe is normal.
                 if mime_matches(&mime_type, &selection.mime) || is_text_mime(&mime_type) {
                     write_fd(fd, &selection.data);
                 } else {
@@ -234,8 +229,7 @@ impl Session {
     }
 
     fn read_selection(&mut self) -> Result<Option<Selection>> {
-        // The compositor sends the current selection right after the device is
-        // created; one more roundtrip guarantees we have seen it.
+        // One more roundtrip guarantees the initial selection arrived.
         self.queue.roundtrip(&mut self.state)?;
 
         let Some(offer) = self.state.current_offer.clone().flatten() else {
@@ -280,8 +274,7 @@ impl Session {
             .expect("manager bound")
             .create_data_source(&self.qh, ());
         source.offer(selection.mime.clone());
-        // Advertising the common aliases too keeps X11 clients (through XWayland's
-        // bridge) and older toolkits able to paste.
+        // Aliases keep XWayland clients and older toolkits able to paste.
         for alias in READ_MIMES {
             if !alias.eq_ignore_ascii_case(&selection.mime) {
                 source.offer((*alias).to_string());
@@ -316,10 +309,9 @@ pub fn read() -> Result<Option<Selection>> {
     Session::connect()?.read_selection()
 }
 
-/// Handle to a background thread that owns the clipboard.
-///
-/// Wayland has no "set and forget": the owner must stay connected to answer
-/// paste requests. Dropping this handle gives the selection up.
+/// Owns the clipboard on a background thread. Wayland has no "set and
+/// forget" - the owner must stay connected to answer paste requests, so
+/// dropping this gives the selection up.
 pub struct ClipboardOwner {
     stop: Arc<Mutex<bool>>,
 }
@@ -336,10 +328,8 @@ impl Drop for ClipboardOwner {
     }
 }
 
-/// Put `selection` on the clipboard and keep serving it for `serve_for`.
-///
-/// Runs on its own thread because the Wayland event loop must stay responsive
-/// for as long as we own the selection.
+/// Own `selection` for `serve_for`, on its own thread so the Wayland event
+/// loop stays responsive throughout.
 pub fn set_for(selection: Selection, serve_for: Duration) -> Result<ClipboardOwner> {
     let stop = Arc::new(Mutex::new(false));
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();

@@ -1,5 +1,3 @@
-//! systemd user service generation and control.
-
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -16,7 +14,6 @@ pub fn unit_path() -> PathBuf {
         .join(UNIT_NAME)
 }
 
-/// Render the unit, pointing at `executable`.
 pub fn unit_contents(executable: &str) -> String {
     format!(
         "[Unit]\n\
@@ -69,8 +66,6 @@ pub async fn systemctl(args: &[&str]) -> Result<String> {
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        // `is-active` reports state through its exit code, so a failure here is
-        // informative rather than fatal; callers decide.
         anyhow::bail!(if stderr.is_empty() { stdout } else { stderr });
     }
     Ok(stdout)

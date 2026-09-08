@@ -1,11 +1,6 @@
-//! Replaceable speech-recognition backends.
-//!
-//! Everything above this layer speaks only [`Backend`], so adding a provider
-//! means adding a module and a registry entry. The trait carries a streaming
-//! extension point that returns "unsupported" by default: v1 ships batch-only
-//! because the measured round trip is already well under the time it takes a
-//! user to release a key, but the shape is here so streaming can be added
-//! without reworking callers.
+//! Replaceable speech-recognition backends. Everything above this layer
+//! speaks only [`Backend`], so a new provider is a module plus a registry
+//! entry.
 
 pub mod remote;
 pub mod whisper;
@@ -46,8 +41,8 @@ pub struct Transcript {
     pub model: Option<String>,
 }
 
-/// Live streaming session. No backend implements this yet; the type exists so
-/// that adding one is additive rather than a redesign.
+/// Live streaming session. Unimplemented; the shape exists so adding one is
+/// additive.
 #[async_trait]
 pub trait StreamingSession: Send {
     async fn push(&mut self, samples: &[f32]) -> Result<()>;
@@ -60,7 +55,7 @@ pub trait StreamingSession: Send {
 pub trait Backend: Send + Sync {
     fn info(&self) -> BackendInfo;
 
-    /// Prepare for transcription: load the model, or open the connection.
+    /// Load the model, or open the connection.
     async fn load(&self) -> Result<()>;
 
     async fn transcribe(&self, request: TranscribeRequest<'_>) -> Result<Transcript>;
@@ -145,8 +140,8 @@ pub fn build_id(id: &str, config: &Config) -> Result<Box<dyn Backend>> {
     }
 }
 
-/// Consumes audio and returns nothing. Useful for exercising the capture and
-/// injection paths without loading a model.
+/// Consumes audio, returns nothing. Exercises capture and injection without a
+/// model.
 pub struct NullBackend;
 
 struct FallbackBackend {
@@ -254,8 +249,7 @@ impl Backend for NullBackend {
     }
 }
 
-/// Reject audio that cannot possibly transcribe, before paying for a backend
-/// round trip.
+/// Reject unusable audio before paying for a backend round trip.
 pub fn validate_audio(samples: &[f32], sample_rate: u32) -> Result<()> {
     if samples.is_empty() {
         bail!("no audio captured");

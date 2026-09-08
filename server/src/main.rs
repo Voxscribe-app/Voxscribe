@@ -109,13 +109,13 @@ enum ServerCommand {
         #[arg(long, value_enum, default_value = "auto")]
         precision: Precision,
     },
-    /// Report the detected GPU and which backend `--backend auto` would pick.
+    /// Detected GPU and what `--backend auto` would pick.
     Detect,
     Paths,
 }
 
-/// ONNX Runtime has no pre-Volta cuDNN kernels, so older cards go to NeMo,
-/// which runs on a CUDA 12.6 PyTorch that still ships Pascal SASS.
+/// No pre-Volta cuDNN kernels in ONNX Runtime, so older cards go to NeMo and
+/// its CUDA 12.6 PyTorch, which still ships Pascal SASS.
 fn resolve_backend(requested: Backend, provider: Provider) -> Backend {
     if requested != Backend::Auto {
         return requested;
@@ -358,7 +358,7 @@ fn install_service(
         bail!("NeMo model name cannot contain whitespace");
     }
     let executable = std::env::current_exe()?;
-    // The NeMo venv path is derived from HOME, which systemd does not set.
+    // The venv path comes from HOME, which systemd does not set.
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/root"));
     let unit = format!(
         "[Unit]\nDescription=Duskr remote ASR server\nAfter=network-online.target\nWants=network-online.target\n\n\
@@ -386,8 +386,8 @@ fn install_service(
     Ok(())
 }
 
-/// Runs one short inference and confirms the process actually holds GPU memory,
-/// so a CPU fallback surfaces at startup instead of as mysterious latency.
+/// One short inference, confirming the process holds GPU memory - a CPU
+/// fallback should surface at startup, not as mysterious latency.
 fn verify_onnx_cuda(engine: &mut onnx::Engine) -> Result<()> {
     let half_second = vec![0u8; SAMPLE_RATE as usize]; // 8000 samples * 2 bytes
     engine

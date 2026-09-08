@@ -1,9 +1,6 @@
-//! Start/stop/error pings.
-//!
-//! Sounds go out through a persistent PipeWire playback stream that is left
-//! inactive between pings, so the sink can still suspend but a ping does not
-//! pay for stream setup. Defaults are synthesized rather than shipped as
-//! assets; a user-supplied WAV or Ogg Vorbis file overrides them.
+//! Start/stop/error pings over a persistent PipeWire stream, left inactive
+//! between pings so the sink can still suspend. Defaults are synthesized; a
+//! user WAV or Ogg Vorbis file overrides them.
 
 use std::collections::VecDeque;
 use std::path::Path;
@@ -41,9 +38,8 @@ fn synthesize(sound: Sound) -> Vec<f32> {
         let t = i as f32 / (total - 1).max(1) as f32;
         let frequency = from + (to - from) * t;
         phase += std::f32::consts::TAU * frequency / PLAYBACK_RATE as f32;
-        // Raised-sine envelope: a bare tone would click at both ends. The
-        // clamp matters - sin(PI) lands slightly negative in f32, and powf of a
-        // negative base is NaN.
+        // Raised-sine envelope; a bare tone clicks at both ends. Clamp
+        // because sin(PI) is slightly negative in f32 and powf would be NaN.
         let envelope = (std::f32::consts::PI * t).sin().max(0.0).powf(0.6);
         out.push(phase.sin() * envelope * 0.35);
     }
@@ -222,8 +218,7 @@ fn playback_loop(
         *pw::keys::MEDIA_CATEGORY => "Playback",
         *pw::keys::MEDIA_ROLE => "Notification",
         *pw::keys::APP_NAME => "Duskr",
-        // The ducker skips this node by name so a ping is never ducked by the
-        // recording it is announcing.
+        // The ducker skips this node by name, so a ping is never ducked.
         *pw::keys::NODE_NAME => "duskr-feedback",
     };
 
@@ -276,8 +271,7 @@ fn playback_loop(
                 }
             }
 
-            // Silence pads the rest of the buffer; a partially written buffer
-            // would replay stale audio.
+            // Pad with silence, or the buffer replays stale audio.
             for i in written..capacity {
                 let start = i * stride;
                 slice[start..start + stride].copy_from_slice(&0f32.to_le_bytes());
@@ -332,7 +326,7 @@ fn playback_loop(
     let loop_handle = mainloop.clone();
     let idle_queue = Arc::clone(&queue);
 
-    // Deactivate once the queue drains so the sink is free to suspend again.
+    // Deactivate once drained, so the sink can suspend.
     let timer = mainloop.loop_().add_timer({
         let stream = stream.clone();
         move |_| {
@@ -402,7 +396,7 @@ mod tests {
         crate::audio::wav::write_file(&path, &samples, 8_000).unwrap();
 
         let loaded = load_file(&path).unwrap();
-        // 8 kHz -> 48 kHz is a six-fold increase in sample count.
+        // 8 kHz -> 48 kHz is six times the samples.
         assert!(
             (loaded.len() as i64 - 48_000).abs() < 10,
             "{}",

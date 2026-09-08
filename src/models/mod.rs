@@ -1,7 +1,3 @@
-//! Local model directory management.
-//!
-//! The directory is configurable, overridable per-invocation through
-//! `DUSKR_MODEL_DIR`, and can be relocated with the models moved along with it.
 
 pub mod download;
 
@@ -13,16 +9,13 @@ use serde::Serialize;
 
 use crate::core::config::Config;
 
-/// whisper.cpp ggml files start with this magic; used to reject truncated
-/// downloads and files that are not models at all.
-const GGML_MAGIC: &[u8; 4] = b"ggml";
+const GGML_MAGIC: &[u8; 4] = b"lmgg";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ModelEntry {
     pub name: String,
     pub path: PathBuf,
     pub size_bytes: u64,
-    /// Passed the format check, so a backend can be expected to load it.
     pub valid: bool,
 }
 
@@ -47,7 +40,6 @@ pub fn human_size(bytes: u64) -> String {
     }
 }
 
-/// Models whose names `duskr model download` understands.
 pub const CATALOG: &[(&str, &str)] = &[
     ("tiny", "75 MiB, fastest, lowest quality"),
     ("tiny.en", "75 MiB, English-only"),
@@ -68,7 +60,6 @@ pub fn is_catalog_model(name: &str) -> bool {
     CATALOG.iter().any(|(model, _)| *model == name)
 }
 
-/// True if `path` looks like a ggml model file.
 pub fn looks_like_model(path: &Path) -> bool {
     let Ok(mut file) = fs::File::open(path) else {
         return false;
@@ -113,14 +104,13 @@ pub fn find(models_dir: &Path, name: &str) -> Option<ModelEntry> {
         .find(|entry| entry.name == name)
 }
 
-/// Copy an existing ggml file into the model directory.
 pub fn add(models_dir: &Path, source: &Path, move_file: bool) -> Result<ModelEntry> {
     if !source.is_file() {
         bail!("{} is not a file", source.display());
     }
     if !looks_like_model(source) {
         bail!(
-            "{} does not look like a ggml model (expected it to start with \"ggml\")",
+            "{} does not look like a ggml model (expected the whisper.cpp magic 0x67676d6c)",
             source.display()
         );
     }
@@ -131,8 +121,6 @@ pub fn add(models_dir: &Path, source: &Path, move_file: bool) -> Result<ModelEnt
         .file_name()
         .and_then(|n| n.to_str())
         .context("source has no file name")?;
-    // Normalize to the ggml-<name>.bin convention so `config set-model <name>`
-    // resolves whatever the file was called before.
     let target_name = if file_name.starts_with("ggml-") {
         file_name.to_string()
     } else {
@@ -145,7 +133,6 @@ pub fn add(models_dir: &Path, source: &Path, move_file: bool) -> Result<ModelEnt
     }
 
     if move_file {
-        // Rename fails across filesystems; fall back to copy-then-remove.
         if fs::rename(source, &destination).is_err() {
             fs::copy(source, &destination)
                 .with_context(|| format!("copying to {}", destination.display()))?;
@@ -178,7 +165,6 @@ pub struct RelocateReport {
     pub moved: Vec<String>,
 }
 
-/// Point the config at a new model directory, optionally bringing the models.
 pub fn relocate(config: &mut Config, new_dir: &Path, move_models: bool) -> Result<RelocateReport> {
     let old_dir = config.models_dir_configured();
     let new_dir = if new_dir.is_absolute() {
@@ -241,6 +227,18 @@ mod tests {
     }
 
     #[test]
+    fn the_magic_matches_what_whisper_cpp_actually_writes_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("ggml-medium.en.bin");
+        fs::write(&real, 0x6767_6d6cu32.to_le_bytes()).unwrap();
+        assert!(looks_like_model(&real));
+
+        let reversed = dir.path().join("ggml-reversed.bin");
+        fs::write(&reversed, b"ggml").unwrap();
+        assert!(!looks_like_model(&reversed));
+    }
+
+    #[test]
     fn only_ggml_files_are_treated_as_models() {
         let dir = tempfile::tempdir().unwrap();
         let good = write_model(dir.path(), "ggml-base.en.bin", 10);
@@ -268,7 +266,6 @@ mod tests {
             entry.path.file_name().unwrap().to_str().unwrap(),
             "ggml-medium.en.bin"
         );
-        // Copy, not move: the original must survive.
         assert!(source.exists());
     }
 

@@ -1,9 +1,3 @@
-//! Model downloads with resume.
-//!
-//! A 3 GiB model over a flaky link is exactly the case where restarting from
-//! zero is unacceptable, so partial files are kept and resumed with a Range
-//! request, then validated before being put in place.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -30,9 +24,6 @@ pub fn model_url(base_url: &str, model: &str) -> String {
     format!("{}/ggml-{model}.bin", base_url.trim_end_matches('/'))
 }
 
-/// Download `model` into `models_dir`, resuming any partial file.
-///
-/// `on_progress` is called as bytes arrive; it must not block for long.
 pub async fn download(
     base_url: &str,
     model: &str,
@@ -45,8 +36,6 @@ pub async fn download(
         if looks_like_model(&final_path) {
             return Ok(final_path);
         }
-        // A corrupt file is worse than no file: it fails at load time, far from
-        // the download that caused it.
         tracing::warn!(
             "{} is not a valid model; re-downloading",
             final_path.display()
@@ -89,7 +78,6 @@ pub async fn download(
         bail!("downloading {url} failed with {}", response.status());
     }
 
-    // A server that ignored the Range header restarts the file from scratch.
     let resuming = already > 0 && response.status() == reqwest::StatusCode::PARTIAL_CONTENT;
     let start = if resuming { already } else { 0 };
     let total = response.content_length().map(|len| len + start);
@@ -193,9 +181,8 @@ mod tests {
     async fn an_existing_valid_model_is_not_re_downloaded() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("ggml-tiny.bin");
-        std::fs::write(&path, b"ggmlxxxx").unwrap();
+        std::fs::write(&path, b"lmggxxxx").unwrap();
 
-        // The URL is unreachable on purpose: reaching the network would be the bug.
         let result = download(
             "http://127.0.0.1:1/never",
             "tiny",

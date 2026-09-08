@@ -1,11 +1,5 @@
-//! Snippets and assets for the desktop shells Duskr integrates with.
-//!
-//! Everything here is generated rather than shipped as a blob, so a change to
-//! the CLI surface cannot leave a stale example behind.
-
 use crate::core::config::Config;
 
-/// Waybar module definition. `duskr waybar` supplies the JSON on stdout.
 pub fn waybar_module() -> String {
     r#"// Add to ~/.config/waybar/config.jsonc and include "custom/duskr" in a module list.
 "custom/duskr": {
@@ -32,10 +26,6 @@ pub fn waybar_style() -> String {
     .to_string()
 }
 
-/// Hyprland bindings, for users who prefer compositor shortcuts to evdev.
-///
-/// Duskr's own evdev listener works on every compositor and keeps working when
-/// the shortcut is held; these are offered as an alternative, not a requirement.
 pub fn hyprland_config(config: &Config) -> String {
     let primary = to_hypr_bind(&config.shortcuts.primary);
     let mut out = format!(
@@ -64,7 +54,6 @@ pub fn hyprland_config(config: &Config) -> String {
     out
 }
 
-/// `SUPER+ALT+D` becomes Hyprland's `SUPER ALT, D`.
 fn to_hypr_bind(chord: &str) -> String {
     let parts: Vec<&str> = chord
         .split('+')
@@ -81,8 +70,6 @@ fn to_hypr_bind(chord: &str) -> String {
     )
 }
 
-/// KDE global shortcuts are declared through a desktop entry, which
-/// `kglobalaccel` picks up.
 pub fn kde_desktop_entry() -> String {
     r#"[Desktop Entry]
 Name=Duskr
@@ -96,8 +83,6 @@ X-KDE-GlobalAccel-CommandShortcut=true
     .to_string()
 }
 
-/// Quickshell service exposing the API the existing hyprwhspr widgets consume:
-/// `available`, `state`, `tooltip`, `level`, `levelActive`.
 pub fn quickshell_service() -> String {
     include_str!("../../assets/quickshell/DuskrService.qml").to_string()
 }

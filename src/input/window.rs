@@ -1,8 +1,6 @@
-//! Focused-window identification, used only to pick per-application rules.
-//!
-//! Each compositor is queried over its own IPC socket rather than by shelling
-//! out, so a lookup costs microseconds and cannot block injection. Compositors
-//! with no such interface simply yield `None`, and the global rules apply.
+//! Focused-window identification for per-application rules. Queried over each
+//! compositor's IPC socket, never by shelling out. No interface yields `None`,
+//! and the global rules apply.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -21,7 +19,7 @@ pub struct WindowInfo {
 }
 
 impl WindowInfo {
-    /// Identifiers a config rule may be keyed by, most specific first.
+    /// Keys a config rule may use, most specific first.
     pub fn identifiers(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut push = |value: &str| {
@@ -32,7 +30,7 @@ impl WindowInfo {
         };
 
         push(&self.class);
-        // `org.kde.konsole` should also match a rule written as `konsole`.
+        // `org.kde.konsole` should also match a rule written `konsole`.
         if let Some(tail) = self.class.rsplit('.').next() {
             if tail != self.class {
                 push(tail);
@@ -92,8 +90,7 @@ struct HyprWindow {
 fn hyprland() -> Option<WindowInfo> {
     let signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()?;
     let base = runtime_dir().join("hypr").join(&signature);
-    // Hyprland moved the socket under $XDG_RUNTIME_DIR/hypr; older builds kept
-    // it in /tmp.
+    // Hyprland moved the socket to $XDG_RUNTIME_DIR/hypr; older builds /tmp.
     let mut stream = connect(base.join(".socket.sock"))
         .or_else(|| connect(PathBuf::from(format!("/tmp/hypr/{signature}/.socket.sock"))))?;
 

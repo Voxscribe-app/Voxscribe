@@ -1,10 +1,3 @@
-//! State mirrored to files for shell integrations that cannot hold a socket
-//! open - Waybar's `exec`, ad-hoc scripts, a `cat` in a terminal.
-//!
-//! Event-driven IPC is the primary interface; these files exist so a two-line
-//! shell snippet still works. Writes are atomic so a reader never sees a
-//! half-written file.
-
 use std::path::Path;
 
 use serde::Serialize;
@@ -13,10 +6,8 @@ use crate::core::config::Integrations;
 use crate::core::paths;
 use crate::core::state::Snapshot;
 
-/// Shape consumed by the Quickshell and Waybar adapters.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct StatusFile {
-    /// CSS class; `stopped`, `recording`, `processing`, `paused`, `error`.
     pub class: String,
     pub text: String,
     pub alt: String,
@@ -59,7 +50,6 @@ fn icon_for(snapshot: &Snapshot) -> &'static str {
 
 pub struct StateWriter {
     legacy: bool,
-    /// Avoids rewriting an unchanged level forty times a second.
     last_level: f32,
 }
 
@@ -86,7 +76,6 @@ impl StateWriter {
         self.write_level(snapshot.level, true);
     }
 
-    /// Publish the capture level. Written only when it moves enough to matter.
     pub fn write_level(&mut self, level: f32, force: bool) {
         if !force && (level - self.last_level).abs() < 0.01 {
             return;
@@ -103,7 +92,6 @@ impl StateWriter {
         let _ = paths::write_atomic(&paths::transcript_preview_file(), text.as_bytes());
     }
 
-    /// Remove everything this writer created, on shutdown.
     pub fn cleanup(&self) {
         for path in [
             paths::state_file(),

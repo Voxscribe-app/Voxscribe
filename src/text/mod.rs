@@ -1,10 +1,3 @@
-//! Transcript post-processing: the transform between raw ASR output and the
-//! characters actually typed into the focused window.
-//!
-//! Order matters and mirrors hyprwhspr: newline flattening, user word
-//! overrides, filler removal, spoken-symbol substitution, whitespace collapse,
-//! then the optional user hook.
-
 pub mod hook;
 
 use std::sync::OnceLock;
@@ -13,8 +6,6 @@ use regex::{Regex, RegexBuilder};
 
 use crate::core::config::Text;
 
-/// Phrases Whisper emits for silence or background noise. A transcript made up
-/// entirely of one of these is discarded rather than typed.
 const HALLUCINATIONS: &[&str] = &[
     "blank audio",
     "blank",
@@ -32,7 +23,6 @@ const HALLUCINATIONS: &[&str] = &[
     "(upbeat music)",
 ];
 
-/// Spoken punctuation, longest phrase first so "question mark" wins over "mark".
 const SYMBOLS: &[(&str, &str)] = &[
     ("question mark", "?"),
     ("exclamation mark", "!"),
@@ -90,8 +80,6 @@ fn symbol_regexes() -> &'static Vec<(Regex, &'static str)> {
 }
 
 fn word_regex(word: &str) -> Option<Regex> {
-    // Single characters cannot use \b (it would refuse to match mid-word), so
-    // they are replaced literally.
     let pattern = if word.chars().count() == 1 {
         regex::escape(word)
     } else {
@@ -103,7 +91,6 @@ fn word_regex(word: &str) -> Option<Regex> {
         .ok()
 }
 
-/// Apply every configured transform except the external hook, which is async.
 pub fn process(raw: &str, config: &Text) -> String {
     let mut text = raw.replace("\r\n", " ").replace(['\r', '\n'], " ");
 
@@ -159,14 +146,12 @@ fn filter_filler_words(text: &str, config: &Text) -> String {
             out = regex.replace_all(&out, "").into_owned();
         }
     }
-    // Filler removal leaves orphaned punctuation spacing behind.
     let out = collapse_whitespace(&out);
     static ORPHANS: OnceLock<Regex> = OnceLock::new();
     let orphans = ORPHANS.get_or_init(|| Regex::new(r" +([,.!?;:])").expect("static pattern"));
     orphans.replace_all(&out, "$1").into_owned()
 }
 
-/// Close the gap a substituted symbol leaves behind: "this ?" -> "this?".
 fn tidy_punctuation(text: &str) -> String {
     static BEFORE: OnceLock<Regex> = OnceLock::new();
     static AFTER: OnceLock<Regex> = OnceLock::new();
@@ -201,8 +186,6 @@ fn is_hallucination(text: &str) -> bool {
     if lowered.is_empty() {
         return true;
     }
-    // Markers are matched both verbatim (they may carry their own brackets) and
-    // stripped of trailing punctuation ("Thank you." -> "thank you").
     let stripped = lowered
         .trim_matches(|c: char| c.is_ascii_punctuation())
         .trim();
@@ -211,8 +194,6 @@ fn is_hallucination(text: &str) -> bool {
         .any(|marker| lowered == *marker || stripped == *marker)
 }
 
-/// Text as it should reach the keyboard: trailing newlines stripped (they would
-/// submit forms early) plus the optional separator space.
 pub fn finalize_for_injection(text: &str, config: &Text) -> String {
     let trimmed = text.trim_end_matches(['\r', '\n']);
     if trimmed.is_empty() {

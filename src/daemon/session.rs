@@ -1,8 +1,5 @@
-//! Recording-session decision logic.
-//!
-//! Kept free of I/O so every mode's behaviour can be asserted directly: this is
-//! where "tap versus hold" and "which key ends a long-form recording" live, and
-//! those are exactly the rules that are painful to debug through a microphone.
+//! Recording-session decision logic, I/O-free so every mode can be asserted
+//! directly rather than debugged through a microphone.
 
 use std::time::Duration;
 
@@ -46,9 +43,9 @@ pub struct SessionRules {
 /// Extra state that only the hybrid tap/hold mode needs.
 #[derive(Debug, Clone, Default)]
 pub struct AutoModeState {
-    /// A tap latched recording on, so the next press stops it.
+    /// Tapped on, so the next press stops it.
     pub latched: bool,
-    /// Recording began on this press, so a release may still end it.
+    /// Began on this press, so a release may still end it.
     pub started_this_press: bool,
 }
 
@@ -97,8 +94,7 @@ pub fn on_press(
                 auto.latched = false;
                 Action::Start { language }
             }
-            // A latched (tapped-on) recording is ended by the next press; a held
-            // one is ended by the release.
+            // Latched ends on the next press, held ends on release.
             _ => {
                 auto.started_this_press = false;
                 if auto.latched {
@@ -139,7 +135,7 @@ pub fn on_release(
             }
             auto.started_this_press = false;
             if held < rules.tap_threshold {
-                // A tap latches recording on; the user is not holding the key.
+                // A tap latches on; the key is not being held.
                 auto.latched = true;
                 Action::Nothing
             } else {
@@ -222,7 +218,7 @@ mod tests {
             press(RecordingMode::Auto, SessionPhase::Idle, &mut auto),
             Action::Start { language: None }
         );
-        // Released quickly: recording latches on rather than stopping.
+        // Quick release latches on rather than stopping.
         assert_eq!(
             on_release(
                 &rules(RecordingMode::Auto),
@@ -273,7 +269,7 @@ mod tests {
             press(RecordingMode::Auto, SessionPhase::Recording, &mut auto),
             Action::Stop
         );
-        // Releasing the key that stopped recording must not restart anything.
+        // Releasing the key that stopped recording must not restart it.
         assert_eq!(
             on_release(
                 &rules(RecordingMode::Auto),
