@@ -1,9 +1,3 @@
-//! Focused-window identification, used only to pick per-application rules.
-//!
-//! Each compositor is queried over its own IPC socket rather than by shelling
-//! out, so a lookup costs microseconds and cannot block injection. Compositors
-//! with no such interface simply yield `None`, and the global rules apply.
-
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
@@ -21,7 +15,6 @@ pub struct WindowInfo {
 }
 
 impl WindowInfo {
-    /// Identifiers a config rule may be keyed by, most specific first.
     pub fn identifiers(&self) -> Vec<String> {
         let mut out = Vec::new();
         let mut push = |value: &str| {
@@ -32,7 +25,6 @@ impl WindowInfo {
         };
 
         push(&self.class);
-        // `org.kde.konsole` should also match a rule written as `konsole`.
         if let Some(tail) = self.class.rsplit('.').next() {
             if tail != self.class {
                 push(tail);
@@ -46,7 +38,6 @@ impl WindowInfo {
     }
 }
 
-/// Lower-case, punctuation-collapsed form used for rule matching.
 pub fn normalize(value: &str) -> String {
     let trimmed = value.trim().to_ascii_lowercase();
     let trimmed = trimmed.strip_suffix(".desktop").unwrap_or(&trimmed);
@@ -92,8 +83,6 @@ struct HyprWindow {
 fn hyprland() -> Option<WindowInfo> {
     let signature = std::env::var("HYPRLAND_INSTANCE_SIGNATURE").ok()?;
     let base = runtime_dir().join("hypr").join(&signature);
-    // Hyprland moved the socket under $XDG_RUNTIME_DIR/hypr; older builds kept
-    // it in /tmp.
     let mut stream = connect(base.join(".socket.sock"))
         .or_else(|| connect(PathBuf::from(format!("/tmp/hypr/{signature}/.socket.sock"))))?;
 
@@ -188,11 +177,10 @@ fn sway() -> Option<WindowInfo> {
     let socket = std::env::var_os("SWAYSOCK").map(PathBuf::from)?;
     let mut stream = connect(socket)?;
 
-    // i3 IPC: "i3-ipc" + payload length + message type, all native-endian.
     let mut request = Vec::with_capacity(14);
     request.extend_from_slice(b"i3-ipc");
     request.extend_from_slice(&0u32.to_ne_bytes());
-    request.extend_from_slice(&4u32.to_ne_bytes()); // GET_TREE
+    request.extend_from_slice(&4u32.to_ne_bytes());
     stream.write_all(&request).ok()?;
 
     let mut header = [0u8; 14];

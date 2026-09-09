@@ -1,7 +1,5 @@
 use std::process::Command;
 
-/// cuDNN 9 ships no pre-Volta SASS, so the ONNX Runtime CUDA provider cannot
-/// run on Pascal or older even when every CUDA library resolves.
 pub const MIN_ONNX_CUDA_CC: (u32, u32) = (7, 0);
 
 #[derive(Clone, Debug)]
@@ -31,7 +29,6 @@ fn query(args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// First CUDA device reported by nvidia-smi, or None when it is unavailable.
 pub fn detect() -> Option<GpuInfo> {
     let stdout = query(&["--query-gpu=name,compute_cap", "--format=csv,noheader"])?;
     let line = stdout.lines().find(|line| !line.trim().is_empty())?;
@@ -43,7 +40,6 @@ pub fn detect() -> Option<GpuInfo> {
     })
 }
 
-/// Tri-state so a missing nvidia-smi is never mistaken for "not on the GPU".
 pub fn process_uses_gpu(pid: u32) -> Option<bool> {
     let stdout = query(&["--query-compute-apps=pid", "--format=csv,noheader"])?;
     Some(

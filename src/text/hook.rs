@@ -1,9 +1,3 @@
-//! User-supplied post-transcription hook.
-//!
-//! The command is user-authored config, so it runs through a shell on purpose;
-//! pipes and chains are the point. Any failure passes the original text
-//! through - a broken hook must never eat a dictation.
-
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -27,7 +21,6 @@ pub async fn run(command: &str, text: &str, timeout: Duration, ctx: HookContext<
         .env("DUSKR_BACKEND", ctx.backend)
         .env("DUSKR_MODEL", ctx.model)
         .env("DUSKR_LANGUAGE", ctx.language)
-        // Kept so hooks written for hyprwhspr keep working after migration.
         .env("HYPRWHSPR_BACKEND", ctx.backend)
         .env("HYPRWHSPR_MODEL", ctx.model)
         .stdin(Stdio::piped())
@@ -70,7 +63,6 @@ pub async fn run(command: &str, text: &str, timeout: Duration, ctx: HookContext<
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let trimmed = stdout.trim_end_matches(['\r', '\n']);
-    // Empty stdout means the hook was an observer, not a rewriter.
     if trimmed.is_empty() {
         text.to_string()
     } else {

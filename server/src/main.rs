@@ -26,7 +26,6 @@ use onnx::Provider;
 
 pub const SAMPLE_RATE: u32 = 16_000;
 
-/// 100 ms of 16 kHz mono s16le.
 const MIN_PCM_BYTES: usize = 3_200;
 
 pub struct Transcription {
@@ -109,13 +108,10 @@ enum ServerCommand {
         #[arg(long, value_enum, default_value = "auto")]
         precision: Precision,
     },
-    /// Report the detected GPU and which backend `--backend auto` would pick.
     Detect,
     Paths,
 }
 
-/// ONNX Runtime has no pre-Volta cuDNN kernels, so older cards go to NeMo,
-/// which runs on a CUDA 12.6 PyTorch that still ships Pascal SASS.
 fn resolve_backend(requested: Backend, provider: Provider) -> Backend {
     if requested != Backend::Auto {
         return requested;
@@ -358,7 +354,6 @@ fn install_service(
         bail!("NeMo model name cannot contain whitespace");
     }
     let executable = std::env::current_exe()?;
-    // The NeMo venv path is derived from HOME, which systemd does not set.
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/root"));
     let unit = format!(
         "[Unit]\nDescription=Duskr remote ASR server\nAfter=network-online.target\nWants=network-online.target\n\n\
@@ -386,10 +381,8 @@ fn install_service(
     Ok(())
 }
 
-/// Runs one short inference and confirms the process actually holds GPU memory,
-/// so a CPU fallback surfaces at startup instead of as mysterious latency.
 fn verify_onnx_cuda(engine: &mut onnx::Engine) -> Result<()> {
-    let half_second = vec![0u8; SAMPLE_RATE as usize]; // 8000 samples * 2 bytes
+    let half_second = vec![0u8; SAMPLE_RATE as usize];
     engine
         .transcribe(&half_second)
         .context("CUDA warmup inference failed")?;

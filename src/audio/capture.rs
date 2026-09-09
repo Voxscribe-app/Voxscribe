@@ -1,14 +1,7 @@
-//! Native PipeWire capture.
-//!
-//! PipeWire runs its own event loop on a dedicated thread; the async runtime
-//! never touches it. Samples land in a shared buffer and metering is published
-//! through atomics, so neither the ASR backend nor the IPC server can stall
-//! capture, and capture cannot stall them.
-
 use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
 use pipewire as pw;
@@ -21,29 +14,22 @@ use tokio::sync::mpsc::UnboundedSender;
 use crate::audio::level::LevelMeter;
 use crate::core::config::Audio;
 
-/// Everything the capture thread publishes to the rest of the daemon.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AudioEvent {
-    /// The stream reached the streaming state and samples are flowing.
     Started,
     Stopped,
-    /// The node went away - unplugged microphone, or PipeWire restarting.
     DeviceLost(String),
     Error(String),
 }
 
 struct Shared {
-    /// Smoothed level, as f32 bits.
     level: AtomicU32,
-    /// Unsmoothed RMS of the most recent buffer, for mute detection.
     raw_level: AtomicU32,
-    /// Buffers seen since arming; zero after a moment means a dead stream.
     frames: AtomicU64,
     armed: AtomicBool,
     running: AtomicBool,
     negotiated_rate: AtomicU32,
     buffer: Mutex<Vec<f32>>,
-    /// Hard cap so a forgotten recording cannot exhaust memory.
     max_samples: AtomicU64,
 }
 
@@ -69,8 +55,6 @@ pub struct Capture {
 }
 
 impl Capture {
-    /// Start the capture thread. Returns once the stream has been created; the
-    /// `Started` event marks the point where samples are actually flowing.
     pub fn start(config: &Audio, events: UnboundedSender<AudioEvent>) -> Result<Self> {
         let shared = Arc::new(Shared {
             level: AtomicU32::new(0),
@@ -126,7 +110,6 @@ impl Capture {
         }
     }
 
-    /// Begin accumulating samples. Any previous buffer is discarded.
     pub fn arm(&self) {
         self.shared
             .buffer
@@ -143,14 +126,12 @@ impl Capture {
         let _ = self.sender.send(Command::Disarm);
     }
 
-    /// Stop accumulating and take everything captured so far.
     pub fn take(&self) -> Vec<f32> {
         self.shared.armed.store(false, Ordering::SeqCst);
         let mut buffer = self.shared.buffer.lock().expect("capture buffer poisoned");
         mem::take(&mut *buffer)
     }
 
-    /// Take the buffer without stopping; used to flush a continuous-mode segment.
     pub fn drain(&self) -> Vec<f32> {
         let mut buffer = self.shared.buffer.lock().expect("capture buffer poisoned");
         mem::take(&mut *buffer)
@@ -172,8 +153,6 @@ impl Capture {
         f32::from_bits(self.shared.raw_level.load(Ordering::Relaxed))
     }
 
-    /// Buffers delivered since arming. Zero after a second means the stream is
-    /// connected but not producing - a disconnected or asleep microphone.
     pub fn frames(&self) -> u64 {
         self.shared.frames.load(Ordering::Relaxed)
     }
@@ -182,21 +161,8 @@ impl Capture {
         self.shared.running.load(Ordering::SeqCst)
     }
 
-    /// Tear down and rebuild the stream, for suspend/resume and device recovery.
     pub fn reconnect(&self) {
         let _ = self.sender.send(Command::Reconnect);
-    }
-
-    /// Wait until the stream is producing buffers, or give up.
-    pub fn wait_until_flowing(&self, timeout: Duration) -> bool {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            if self.frames() > 0 {
-                return true;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        false
     }
 }
 
@@ -218,9 +184,6 @@ struct UserData {
 fn build_format_pod(config: &Audio) -> Result<Vec<u8>> {
     let mut info = spa::param::audio::AudioInfoRaw::new();
     info.set_format(spa::param::audio::AudioFormat::F32LE);
-    // Asking for exactly what the ASR backends want lets PipeWire's adapter do
-    // the resampling in-graph, which is both faster and better than anything we
-    // would write here.
     info.set_rate(config.sample_rate);
     info.set_channels(1);
 
@@ -390,8 +353,6 @@ fn run_loop(
         )
         .context("connecting the capture stream")?;
 
-    // Idle until the first recording unless the user asked to keep the mic warm;
-    // an always-active stream lights the desktop's microphone indicator.
     if !config.keepalive {
         let _ = stream.set_active(false);
     }

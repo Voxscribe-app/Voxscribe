@@ -1,5 +1,3 @@
-//! XDG-derived locations for every file Duskr owns.
-
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -24,13 +22,6 @@ pub fn data_dir() -> PathBuf {
         .join(APP)
 }
 
-pub fn cache_dir() -> PathBuf {
-    env_path("XDG_CACHE_HOME")
-        .unwrap_or_else(|| home().join(".cache"))
-        .join(APP)
-}
-
-/// Private per-user runtime directory. Created with mode 0700 on first use.
 pub fn runtime_dir() -> PathBuf {
     match env_path("XDG_RUNTIME_DIR") {
         Some(dir) => dir.join(APP),
@@ -66,8 +57,6 @@ pub fn transcript_preview_file() -> PathBuf {
     runtime_dir().join("transcript_preview")
 }
 
-/// Mirror of [`state_file`]/[`audio_level_file`] under the config directory, kept
-/// for shell integrations that poll a stable path (Waybar, ad-hoc scripts).
 pub fn legacy_state_file() -> PathBuf {
     config_dir().join("recording_status")
 }
@@ -84,15 +73,6 @@ pub fn history_file() -> PathBuf {
     data_dir().join("history.jsonl")
 }
 
-pub fn log_dir() -> PathBuf {
-    cache_dir().join("logs")
-}
-
-pub fn ensure_dir(path: &Path) -> io::Result<()> {
-    fs::create_dir_all(path)
-}
-
-/// Create `path` if missing and force mode 0700; sockets and transcripts live here.
 pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
     fs::create_dir_all(path)?;
     let mut perms = fs::metadata(path)?.permissions();
@@ -103,7 +83,6 @@ pub fn ensure_private_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Write via a sibling temp file + rename so readers never observe a partial file.
 pub fn write_atomic(path: &Path, contents: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

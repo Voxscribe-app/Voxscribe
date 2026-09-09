@@ -1,10 +1,3 @@
-//! The long-lived daemon.
-//!
-//! Everything expensive is owned here and kept hot: the ASR model, the
-//! PipeWire streams, the virtual keyboard, the evdev listeners. The event loop
-//! itself only routes messages - audio, hotkeys, IPC, timers and suspend
-//! signals each arrive on their own channel, so none of them can block another.
-
 pub mod session;
 pub mod transcribe;
 
@@ -26,17 +19,15 @@ use crate::core::state::{Event, Phase, Snapshot, StateHandle};
 use crate::input::hotkeys::{self, HotkeyEvent, HotkeyListener};
 use crate::input::inject::Injector;
 use crate::integrations::notify::{Notifier, Urgency};
+use crate::integrations::osd::Osd;
 use crate::integrations::statefiles::StateWriter;
 use crate::ipc::server::{Command, Server};
 use crate::ipc::{Request, Response};
 
 use session::{Action, AutoModeState, SessionPhase, SessionRules};
 
-/// How often the capture level is sampled and republished.
 const LEVEL_INTERVAL: Duration = Duration::from_millis(50);
-/// Ignore the first moments of a recording when deciding the mic is muted.
 const MUTE_GRACE: Duration = Duration::from_millis(600);
-/// Sustained digital silence before a recording is abandoned as muted.
 const MUTE_TIMEOUT: Duration = Duration::from_millis(1_200);
 
 pub struct Daemon {
@@ -49,6 +40,8 @@ pub struct Daemon {
     injector: Option<Arc<Injector>>,
     notifier: Arc<Notifier>,
     writer: StateWriter,
+    osd: Option<Osd>,
+    osd_suppressed: bool,
     jobs: mpsc::UnboundedSender<transcribe::Job>,
 
     phase: SessionPhase,
@@ -56,17 +49,14 @@ pub struct Daemon {
     press_at: Option<Instant>,
     started_at: Option<Instant>,
     language: Option<String>,
-    /// Long-form segments captured so far.
     segments: Vec<Vec<f32>>,
     vad: Option<Vad>,
     silence_since: Option<Instant>,
     last_level_sample: Instant,
     next_audio_retry: Option<Instant>,
-    /// Devices holding shortcuts; kept alive for the daemon's lifetime.
     hotkeys: Option<HotkeyListener>,
 }
 
-/// Start the daemon and run until a shutdown signal arrives.
 pub async fn run() -> Result<()> {
     let config = Arc::new(Config::load_or_default());
     let state = StateHandle::new(Snapshot {
@@ -120,8 +110,6 @@ pub async fn run() -> Result<()> {
         .context("creating the ASR backend")?
         .into();
 
-    // Loading happens in the background so shortcuts and IPC answer immediately;
-    // recording is refused until it finishes.
     {
         let backend = Arc::clone(&backend);
         let state = state.clone();
@@ -184,6 +172,8 @@ pub async fn run() -> Result<()> {
 
     let mut daemon = Daemon {
         writer: StateWriter::new(&config.integrations),
+        osd: Osd::start(&config.osd),
+        osd_suppressed: false,
         config,
         state,
         capture,
@@ -229,6 +219,7 @@ pub async fn run() -> Result<()> {
                 let snapshot = snapshots.borrow_and_update().clone();
                 daemon.writer.write_snapshot(&snapshot);
                 daemon.run_state_hook(&snapshot);
+                daemon.update_osd(&snapshot);
             }
             _ = tokio::signal::ctrl_c() => break,
             _ = sigterm.recv() => break,
@@ -340,8 +331,6 @@ impl Daemon {
         self.language = language.or_else(|| self.config.general.language.clone());
         self.capture.arm();
 
-        // Silence detection and auto-stop both need a detector; continuous mode
-        // additionally uses it to decide when to flush a segment.
         self.vad = self.make_vad();
         self.silence_since = None;
         self.started_at = Some(Instant::now());
@@ -419,7 +408,6 @@ impl Daemon {
         } else {
             tail
         };
-        // A stray click at the very end of a push-to-talk release is not speech.
         if samples.len() < (self.capture.sample_rate() as f32 * 0.1) as usize {
             samples.clear();
         }
@@ -482,7 +470,6 @@ impl Daemon {
         if self.phase != SessionPhase::Recording {
             return;
         }
-        // Long-form: keep what has been said so far and stop consuming audio.
         let segment = self.capture.take();
         if !segment.is_empty() {
             self.segments.push(segment);
@@ -529,7 +516,6 @@ impl Daemon {
         });
     }
 
-    /// Periodic work: level publication, mute detection, VAD, hard limits.
     async fn on_tick(&mut self) {
         let level = self.capture.level();
         if self.phase == SessionPhase::Recording {
@@ -600,7 +586,6 @@ impl Daemon {
         self.check_vad(elapsed).await;
     }
 
-    /// Abort a recording whose microphone is producing true digital silence.
     async fn check_muted(&mut self) -> bool {
         if !self.config.audio.mute_detection {
             return false;
@@ -641,7 +626,6 @@ impl Daemon {
         vad.reset();
 
         if self.config.general.recording_mode == RecordingMode::Continuous {
-            // Flush what has been said and keep the microphone open.
             let segment = self.capture.drain();
             if !segment.is_empty() {
                 tracing::debug!("continuous mode flushing {} samples", segment.len());
@@ -687,9 +671,6 @@ impl Daemon {
             }
             return;
         }
-        // Resuming invalidates PipeWire proxies and can leave GPU contexts
-        // stale, so both are rebuilt before the next dictation rather than
-        // failing on it.
         tracing::info!("system resumed; refreshing audio and backend");
         self.capture.reconnect();
         let backend = Arc::clone(&self.backend);
@@ -705,7 +686,6 @@ impl Daemon {
         });
     }
 
-    /// Handle an IPC command. Returns true when the daemon should exit.
     async fn on_command(&mut self, command: Command) -> bool {
         let Command { request, reply } = command;
         let mut shutdown = false;
@@ -753,27 +733,15 @@ impl Daemon {
             },
             Request::SetBackend { id } => self.set_backend(&id).await,
             Request::SetModel { name } => self.set_model(&name).await,
-            Request::ModelUnload => match self.backend.unload().await {
-                Ok(()) => {
-                    self.state.update(|snapshot| {
-                        snapshot.ready = false;
-                        snapshot.message = "model unloaded".into();
-                    });
-                    Response::Ok
+            Request::ModelUnload => self.unload_model().await,
+            Request::ModelReload => self.load_model().await,
+            Request::ModelToggle => {
+                if self.backend.is_ready() {
+                    self.unload_model().await
+                } else {
+                    self.load_model().await
                 }
-                Err(err) => Response::error(format!("{err:#}")),
-            },
-            Request::ModelReload => match self.backend.load().await {
-                Ok(()) => {
-                    self.state.update(|snapshot| {
-                        snapshot.ready = true;
-                        snapshot.message = "ready".into();
-                        snapshot.phase = Phase::Idle;
-                    });
-                    Response::Ok
-                }
-                Err(err) => Response::error(format!("{err:#}")),
-            },
+            }
             Request::TranscribeFile { path } => self.transcribe_file(&path).await,
             Request::Shutdown => {
                 shutdown = true;
@@ -785,14 +753,42 @@ impl Daemon {
         shutdown
     }
 
+    async fn unload_model(&mut self) -> Response {
+        match self.backend.unload().await {
+            Ok(()) => {
+                self.state.update(|snapshot| {
+                    snapshot.ready = false;
+                    snapshot.message = "model unloaded".into();
+                });
+                Response::Ok
+            }
+            Err(err) => Response::error(format!("{err:#}")),
+        }
+    }
+
+    async fn load_model(&mut self) -> Response {
+        match self.backend.load().await {
+            Ok(()) => {
+                self.state.update(|snapshot| {
+                    snapshot.ready = true;
+                    snapshot.message = "ready".into();
+                    snapshot.phase = Phase::Idle;
+                });
+                Response::Ok
+            }
+            Err(err) => Response::error(format!("{err:#}")),
+        }
+    }
+
     async fn set_backend(&mut self, id: &str) -> Response {
-        let mut config = (*self.config).clone();
+        let mut config = Config::load_or_default();
         config.asr.backend = id.to_string();
         match asr::build(&config) {
             Ok(_) => {
                 if let Err(err) = config.save() {
                     return Response::error(format!("{err:#}"));
                 }
+                self.config = Arc::new(config);
                 Response::Text {
                     text: format!(
                         "backend set to '{id}'; restart the daemon to load it \
@@ -805,11 +801,12 @@ impl Daemon {
     }
 
     async fn set_model(&mut self, name: &str) -> Response {
-        let mut config = (*self.config).clone();
+        let mut config = Config::load_or_default();
         config.asr.whisper.model = name.to_string();
         if let Err(err) = config.save() {
             return Response::error(format!("{err:#}"));
         }
+        self.config = Arc::new(config);
         Response::Text {
             text: format!(
                 "model set to '{name}'; restart the daemon to load it \
@@ -832,14 +829,18 @@ impl Daemon {
         };
         match self.backend.transcribe(request).await {
             Ok(transcript) => Response::Text {
-                text: transcribe::finish(&transcript.text, &self.config, &transcript.backend).await,
+                text: transcribe::finish(
+                    &transcript.text,
+                    &self.config,
+                    &transcript.backend,
+                    Some(&self.state),
+                )
+                .await,
             },
             Err(err) => Response::error(format!("{err:#}")),
         }
     }
 
-    /// Re-read the configuration. Settings that own a hardware resource
-    /// (shortcuts, capture device) need a restart and say so.
     async fn reload(&mut self) -> Result<()> {
         let new_config = Config::load()?;
         let hardware_changed = new_config.shortcuts != self.config.shortcuts
@@ -864,6 +865,18 @@ impl Daemon {
             tracing::info!("configuration reloaded");
         }
         Ok(())
+    }
+
+    fn update_osd(&mut self, snapshot: &Snapshot) {
+        let Some(osd) = &self.osd else {
+            return;
+        };
+        let suppressed = self.state.watchers() > 0;
+        if suppressed != self.osd_suppressed {
+            self.osd_suppressed = suppressed;
+            osd.set_suppressed(suppressed);
+        }
+        osd.update(snapshot.phase, snapshot.level);
     }
 
     fn run_state_hook(&self, snapshot: &Snapshot) {
@@ -914,7 +927,6 @@ impl Daemon {
         self.notifier.clear().await;
         self.writer.cleanup();
         let _ = std::fs::remove_file(paths::pid_file());
-        // Give the ducker's PipeWire thread a moment to land its restore.
         tokio::time::sleep(Duration::from_millis(120)).await;
     }
 }

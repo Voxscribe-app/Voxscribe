@@ -1,10 +1,3 @@
-//! Start/stop/error pings.
-//!
-//! Sounds go out through a persistent PipeWire playback stream that is left
-//! inactive between pings, so the sink can still suspend but a ping does not
-//! pay for stream setup. Defaults are synthesized rather than shipped as
-//! assets; a user-supplied WAV or Ogg Vorbis file overrides them.
-
 use std::collections::VecDeque;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -27,7 +20,6 @@ pub enum Sound {
     Error,
 }
 
-/// Two-tone chirp; rising for start, falling for stop, low buzz for errors.
 fn synthesize(sound: Sound) -> Vec<f32> {
     let (from, to, seconds) = match sound {
         Sound::Start => (660.0_f32, 990.0, 0.09),
@@ -41,9 +33,6 @@ fn synthesize(sound: Sound) -> Vec<f32> {
         let t = i as f32 / (total - 1).max(1) as f32;
         let frequency = from + (to - from) * t;
         phase += std::f32::consts::TAU * frequency / PLAYBACK_RATE as f32;
-        // Raised-sine envelope: a bare tone would click at both ends. The
-        // clamp matters - sin(PI) lands slightly negative in f32, and powf of a
-        // negative base is NaN.
         let envelope = (std::f32::consts::PI * t).sin().max(0.0).powf(0.6);
         out.push(phase.sin() * envelope * 0.35);
     }
@@ -85,7 +74,6 @@ fn decode_ogg(bytes: &[u8]) -> Result<(Vec<f32>, u32)> {
 
 struct Queue {
     pending: Mutex<VecDeque<Vec<f32>>>,
-    /// Sample offset within the buffer currently being drained.
     active: Mutex<Option<(Vec<f32>, usize)>>,
     playing: AtomicBool,
 }
@@ -222,8 +210,6 @@ fn playback_loop(
         *pw::keys::MEDIA_CATEGORY => "Playback",
         *pw::keys::MEDIA_ROLE => "Notification",
         *pw::keys::APP_NAME => "Duskr",
-        // The ducker skips this node by name so a ping is never ducked by the
-        // recording it is announcing.
         *pw::keys::NODE_NAME => "duskr-feedback",
     };
 
@@ -276,8 +262,6 @@ fn playback_loop(
                 }
             }
 
-            // Silence pads the rest of the buffer; a partially written buffer
-            // would replay stale audio.
             for i in written..capacity {
                 let start = i * stride;
                 slice[start..start + stride].copy_from_slice(&0f32.to_le_bytes());
@@ -332,7 +316,6 @@ fn playback_loop(
     let loop_handle = mainloop.clone();
     let idle_queue = Arc::clone(&queue);
 
-    // Deactivate once the queue drains so the sink is free to suspend again.
     let timer = mainloop.loop_().add_timer({
         let stream = stream.clone();
         move |_| {
@@ -378,7 +361,6 @@ mod tests {
         for sound in [Sound::Start, Sound::Stop, Sound::Error] {
             let samples = synthesize(sound);
             assert!(!samples.is_empty());
-            // The envelope must start and end at silence.
             assert!(samples[0].abs() < 1e-3, "{sound:?} starts with a click");
             assert!(
                 samples[samples.len() - 1].abs() < 1e-3,
@@ -402,7 +384,6 @@ mod tests {
         crate::audio::wav::write_file(&path, &samples, 8_000).unwrap();
 
         let loaded = load_file(&path).unwrap();
-        // 8 kHz -> 48 kHz is a six-fold increase in sample count.
         assert!(
             (loaded.len() as i64 - 48_000).abs() < 10,
             "{}",

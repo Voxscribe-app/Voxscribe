@@ -1,5 +1,3 @@
-//! Client half of the IPC protocol, used by the CLI and by integrations.
-
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -46,7 +44,6 @@ impl Client {
         self
     }
 
-    /// Send a request and wait for its single response.
     pub async fn send(&mut self, request: Request) -> Result<Response> {
         self.writer
             .write_all(encode(&request)?.as_bytes())
@@ -64,7 +61,6 @@ impl Client {
         serde_json::from_str(line.trim()).context("parsing the response")
     }
 
-    /// Send a request, turning an error response into an `Err`.
     pub async fn call(&mut self, request: Request) -> Result<Response> {
         match self.send(request).await? {
             Response::Error { message } => bail!(message),
@@ -79,7 +75,6 @@ impl Client {
         }
     }
 
-    /// Subscribe and invoke `on_event` for each event until the stream ends.
     pub async fn subscribe<F>(&mut self, mut on_event: F) -> Result<()>
     where
         F: FnMut(Event) -> Result<bool>,
@@ -92,7 +87,6 @@ impl Client {
         let mut line = String::new();
         loop {
             line.clear();
-            // No timeout here: an idle daemon is a quiet daemon, not a dead one.
             if self.reader.read_line(&mut line).await? == 0 {
                 return Ok(());
             }
@@ -114,7 +108,6 @@ impl Client {
     }
 }
 
-/// Whether a daemon is listening right now.
 pub async fn is_running() -> bool {
     daemon_socket_alive(&paths::socket_path()).await
 }
@@ -123,7 +116,6 @@ pub async fn daemon_socket_alive(path: &PathBuf) -> bool {
     UnixStream::connect(path).await.is_ok()
 }
 
-/// One-shot helper for the many CLI commands that send a request and exit.
 pub async fn request(request: Request) -> Result<Response> {
     Client::connect().await?.call(request).await
 }

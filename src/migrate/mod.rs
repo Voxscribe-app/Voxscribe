@@ -1,10 +1,3 @@
-//! Migration from hyprwhspr.
-//!
-//! The translation itself is a pure function over hyprwhspr's `config.json`, so
-//! every mapping decision is testable without touching the filesystem. The
-//! side-effecting half backs up whatever it replaces and only disables
-//! hyprwhspr once Duskr has actually started.
-
 pub mod quickshell;
 
 use std::collections::BTreeMap;
@@ -17,7 +10,6 @@ use crate::asr;
 use crate::core::config::{Config, RecordingMode, RemoteProtocol, SamplingStrategy};
 use crate::core::paths;
 
-/// Something the user should know about a migrated setting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Note {
     Mapped { from: String, to: String },
@@ -54,17 +46,11 @@ fn as_u64(value: Option<&Value>) -> Option<u64> {
     value?.as_u64()
 }
 
-/// Translate a hyprwhspr configuration into a Duskr one.
-///
-/// `base` is the configuration to layer onto - the defaults for a fresh
-/// install, or the existing config when re-running a migration.
 pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
     let mut config = base;
     let mut notes = Vec::new();
     let get = |key: &str| source.get(key);
 
-    // hyprwhspr already migrated the pre-recording_mode boolean, but a config
-    // that predates that migration may still carry it.
     let mode_source = as_str(get("recording_mode")).or_else(|| {
         as_bool(get("push_to_talk")).map(|ptt| {
             if ptt {
@@ -105,7 +91,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         });
     }
 
-    // Shortcuts.
     if let Some(primary) = as_str(get("primary_shortcut")) {
         config.shortcuts.primary = primary.clone();
         notes.push(Note::Mapped {
@@ -147,7 +132,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         ));
     }
 
-    // Audio.
     if let Some(device) =
         as_str(get("audio_device_name")).or_else(|| as_str(get("audio_device_id")))
     {
@@ -205,13 +189,11 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         config.audio.long_form_segment_seconds = interval as u32;
     }
 
-    // ASR backend and model.
     let backend_raw = as_str(get("transcription_backend")).unwrap_or_else(|| "pywhispercpp".into());
     let backend = asr::canonical_backend_id(&backend_raw);
     match backend {
         "whisper" => {
             config.asr.backend = "whisper".into();
-            // faster-whisper keeps its model under its own key.
             let model = if backend_raw.eq_ignore_ascii_case("faster-whisper") {
                 as_str(get("faster_whisper_model")).or_else(|| as_str(get("model")))
             } else {
@@ -228,7 +210,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         "remote" => {
             config.asr.backend = "remote".into();
             if let Some(url) = as_str(get("rest_endpoint_url")) {
-                // hyprwhspr stores the full endpoint; Duskr wants the base.
                 config.asr.remote.url = url
                     .trim_end_matches("/transcribe")
                     .trim_end_matches('/')
@@ -238,8 +219,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
                     to: "asr.remote.url".into(),
                 });
             }
-            // The known-good server speaks multipart; `auto` probes for the
-            // faster raw-PCM route and falls back on its own.
             config.asr.remote.protocol = RemoteProtocol::Auto;
             if let Some(timeout) = as_u64(get("rest_timeout")) {
                 config.asr.remote.timeout_ms = timeout * 1000;
@@ -291,7 +270,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         config.asr.whisper.beam_size = beam.max(1) as usize;
     }
 
-    // Text processing.
     if let Some(overrides) = get("word_overrides").and_then(|v| v.as_object()) {
         let mapped: BTreeMap<String, String> = overrides
             .iter()
@@ -328,9 +306,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         });
     }
 
-    // Injection. hyprwhspr's inject_mode/paste settings describe the wtype and
-    // ydotool machinery Duskr replaces, so they are deliberately not carried
-    // over; per-application rules are.
     if let Some(mode) = as_str(get("inject_mode")) {
         notes.push(Note::Dropped {
             key: format!("inject_mode = {mode}"),
@@ -373,7 +348,6 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         }
     }
 
-    // Integrations.
     if let Some(osd) = as_bool(get("mic_osd_enabled")) {
         config.integrations.osd = osd;
     }
@@ -388,7 +362,6 @@ pub struct ModelImport {
     pub destination: PathBuf,
 }
 
-/// Directories hyprwhspr and pywhispercpp keep ggml models in.
 pub fn model_search_paths() -> Vec<PathBuf> {
     vec![
         paths::pywhispercpp_models_dir(),
@@ -397,10 +370,6 @@ pub fn model_search_paths() -> Vec<PathBuf> {
     ]
 }
 
-/// Copy every ggml model found in hyprwhspr's directories into `models_dir`.
-///
-/// Python virtual environments are never touched - they are most of
-/// hyprwhspr's disk footprint and none of its value.
 pub fn import_models(models_dir: &Path, move_files: bool) -> Result<Vec<ModelImport>> {
     let mut imported = Vec::new();
     for directory in model_search_paths() {
@@ -436,7 +405,6 @@ pub fn import_models(models_dir: &Path, move_files: bool) -> Result<Vec<ModelImp
     Ok(imported)
 }
 
-/// Copy `path` next to itself with a timestamped suffix.
 pub fn backup(path: &Path) -> Result<Option<PathBuf>> {
     if !path.exists() {
         return Ok(None);
@@ -583,7 +551,6 @@ mod tests {
 
     #[test]
     fn the_real_hyprwhspr_config_migrates_end_to_end() {
-        // Verbatim from the config this migration was written against.
         let source = json!({
             "recording_mode": "push_to_talk",
             "use_hypr_bindings": true,
@@ -605,11 +572,9 @@ mod tests {
         assert_eq!(config.general.language.as_deref(), Some("en"));
         assert_eq!(config.shortcuts.device_names.len(), 3);
         assert_eq!(config.asr.backend, "whisper");
-        // faster-whisper's model key wins over the whisper.cpp one.
         assert_eq!(config.asr.whisper.model, "large-v3-turbo");
         assert!(!config.integrations.osd);
 
-        // wtype must be reported as dropped, not silently carried over.
         assert!(notes
             .iter()
             .any(|n| matches!(n, Note::Dropped { key, .. } if key.contains("wtype"))));

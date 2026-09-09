@@ -1,11 +1,3 @@
-//! Delivering a transcript to whatever window has focus.
-//!
-//! The default path synthesizes real key events on the persistent virtual
-//! keyboard, which every consumer understands - games with raw input, Discord,
-//! browsers, terminals, XWayland. The clipboard is used only when a transcript
-//! contains characters no US-layout keystroke can produce, and the previous
-//! selection is restored afterwards.
-
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,12 +12,9 @@ pub struct InjectOutcome {
     pub mode: InjectMode,
     pub submitted: bool,
     pub chars: usize,
-    /// Characters that had to take the clipboard path, if any.
     pub fallback_chars: Vec<char>,
 }
 
-/// The settings that actually apply, after the per-application rule is merged
-/// over the globals.
 #[derive(Debug, Clone, PartialEq)]
 pub struct EffectiveRule {
     pub mode: InjectMode,
@@ -35,7 +24,6 @@ pub struct EffectiveRule {
     pub matched: Option<String>,
 }
 
-/// Merge the global input settings with the first matching application rule.
 pub fn effective_rule(config: &Config, identifiers: &[String]) -> EffectiveRule {
     let mut rule = EffectiveRule {
         mode: config.input.mode,
@@ -80,16 +68,11 @@ fn apply_app_rule(rule: &mut EffectiveRule, app: &AppRule) {
     }
 }
 
-/// Which delivery path a transcript takes under a given rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Plan {
     Nothing,
     Type,
-    /// Clipboard paste; carries the characters that forced the decision so the
-    /// caller can explain itself in logs.
-    Paste {
-        forced_by: Vec<char>,
-    },
+    Paste { forced_by: Vec<char> },
 }
 
 pub fn plan(text: &str, mode: InjectMode) -> Plan {
@@ -137,16 +120,6 @@ impl Injector {
         })
     }
 
-    pub fn reconfigure(&mut self, config: &Config) {
-        self.restore_clipboard = config.input.restore_clipboard;
-        self.restore_delay = Duration::from_millis(config.input.restore_clipboard_delay_ms);
-        self.submit_delay = Duration::from_millis(config.input.submit_delay_ms);
-    }
-
-    /// Look up the focused window and inject `text` under the matching rule.
-    ///
-    /// Blocking: key events are paced with sleeps. Callers on the async runtime
-    /// must wrap this in `spawn_blocking`.
     pub fn inject(&self, text: &str, config: &Config) -> Result<InjectOutcome> {
         let identifiers = window::focused()
             .map(|w| w.identifiers())
@@ -169,8 +142,6 @@ impl Injector {
         {
             let mut keyboard = self.keyboard.lock().expect("virtual keyboard poisoned");
             keyboard.set_key_delay(Duration::from_micros(rule.key_delay_us));
-            // A held push-to-talk chord would otherwise turn every typed
-            // character into a shortcut.
             keyboard
                 .release_modifiers()
                 .context("releasing modifiers before injection")?;
@@ -234,16 +205,12 @@ impl Injector {
             None
         };
 
-        // Ownership has to outlive the paste keystroke, so the source is served
-        // for a bounded window rather than a single roundtrip.
         let owner = clipboard::set_for(
             clipboard::Selection::text(text),
             self.restore_delay + Duration::from_secs(2),
         )
         .context("placing the transcript on the clipboard")?;
 
-        // Give the compositor a moment to publish the new selection before the
-        // paste chord asks for it.
         std::thread::sleep(Duration::from_millis(60));
 
         let chord =
@@ -258,8 +225,6 @@ impl Injector {
         owner.release();
 
         if let Some(previous) = previous {
-            // Re-offering keeps the user's clipboard exactly as it was; without
-            // this the transcript would silently replace it.
             match clipboard::set_for(previous, Duration::from_secs(3600)) {
                 Ok(owner) => std::mem::forget(owner),
                 Err(err) => tracing::warn!("could not restore the clipboard: {err}"),
@@ -269,7 +234,6 @@ impl Injector {
         Ok(())
     }
 
-    /// Send Enter on its own, for `duskr submit`-style flows.
     pub fn submit(&self) -> Result<()> {
         self.keyboard
             .lock()

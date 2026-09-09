@@ -1,20 +1,17 @@
-//! Local whisper.cpp backend.
-//!
-//! Reads the same ggml files hyprwhspr and pywhispercpp use, so a migrated
-//! `medium.en` keeps working without re-downloading anything. The model is
-//! loaded once and kept resident; inference runs on a blocking thread so the
-//! async runtime stays free for IPC and state updates.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
 use crate::core::config::Config;
 
-/// Resolve a model reference to a file on disk.
-///
-/// Accepts an absolute path, a bare name (`medium.en`), or an already-prefixed
-/// file name (`ggml-medium.en.bin`).
+pub const GPU_BACKEND: Option<&str> = if cfg!(feature = "cuda") {
+    Some("cuda")
+} else if cfg!(feature = "vulkan") {
+    Some("vulkan")
+} else {
+    None
+};
+
 pub fn resolve_model_path(model: &str, models_dir: &Path) -> PathBuf {
     let model = model.trim();
     let candidate = Path::new(model);
@@ -27,7 +24,6 @@ pub fn resolve_model_path(model: &str, models_dir: &Path) -> PathBuf {
     models_dir.join(format!("ggml-{model}.bin"))
 }
 
-/// Model name as users refer to it, derived from a ggml file name.
 pub fn model_name_from_path(path: &Path) -> String {
     let stem = path
         .file_name()
@@ -58,7 +54,6 @@ mod imp {
     use crate::asr::{Backend, BackendInfo, TranscribeRequest, Transcript};
     use crate::core::config::{Config, SamplingStrategy};
 
-    /// whisper.cpp is fixed at 16 kHz.
     const MODEL_SAMPLE_RATE: u32 = 16_000;
 
     struct Loaded {
@@ -110,6 +105,14 @@ mod imp {
                     self.model_name
                 );
             }
+            if self.use_gpu && super::GPU_BACKEND.is_none() {
+                bail!(
+                    "asr.whisper.use_gpu is set, but this binary was built without a GPU \
+                     backend, so whisper would run on the CPU instead. Rebuild with \
+                     `./scripts/build.sh --release --features cuda` (or `--features vulkan`), \
+                     or set asr.whisper.use_gpu = false to accept CPU inference."
+                );
+            }
             let mut params = WhisperContextParameters::default();
             params.use_gpu(self.use_gpu);
 
@@ -144,15 +147,11 @@ mod imp {
             params.set_temperature(self.temperature);
             params.set_suppress_blank(true);
             params.set_suppress_nst(self.suppress_non_speech);
-            // Nothing consumes timestamps, and printing anything would land in
-            // the journal on every dictation.
             params.set_no_timestamps(true);
             params.set_print_special(false);
             params.set_print_progress(false);
             params.set_print_realtime(false);
             params.set_print_timestamps(false);
-            // Each dictation is independent; carrying context between them makes
-            // whisper repeat the previous transcript when the audio is quiet.
             params.set_no_context(true);
             if !self.prompt.trim().is_empty() {
                 params.set_initial_prompt(&self.prompt);
@@ -180,8 +179,6 @@ mod imp {
             if guard.is_some() {
                 return Ok(());
             }
-            // Loading a large model is seconds of CPU and gigabytes of I/O;
-            // keeping it off the runtime keeps IPC answering meanwhile.
             let loaded = tokio::task::block_in_place(|| self.open())?;
             *guard = Some(loaded);
             self.ready.store(true, Ordering::SeqCst);
@@ -255,6 +252,17 @@ pub fn build(_config: &Config) -> Result<Box<dyn crate::asr::Backend>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_gpu_backend_constant_tracks_the_compiled_features() {
+        if cfg!(feature = "cuda") {
+            assert_eq!(GPU_BACKEND, Some("cuda"));
+        } else if cfg!(feature = "vulkan") {
+            assert_eq!(GPU_BACKEND, Some("vulkan"));
+        } else {
+            assert_eq!(GPU_BACKEND, None);
+        }
+    }
 
     #[test]
     fn a_bare_model_name_resolves_to_a_ggml_file_in_the_model_directory() {

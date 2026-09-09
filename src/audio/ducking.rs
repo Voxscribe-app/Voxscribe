@@ -1,10 +1,3 @@
-//! Ducking of other applications' audio while recording.
-//!
-//! Volume is changed per output *stream*, never on the sink. Moving the sink
-//! volume would pop the desktop's volume OSD on every dictation and, worse,
-//! would leave the speakers wrong if Duskr died while ducked. Per-stream
-//! changes are invisible to master-volume watchers and revert cleanly.
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,23 +11,17 @@ use pw::spa::pod::{
 use pw::spa::utils::SpaTypes;
 use pw::types::ObjectType;
 
-/// Nodes belonging to Duskr itself; ducking our own ping would restore it to a
-/// ducked level once the recording ends.
 const OWN_NODES: &[&str] = &["duskr-feedback", "duskr-capture"];
 
 #[derive(Debug, Clone, PartialEq)]
 struct NodeVolumes {
-    /// Identity beyond the numeric id: PipeWire recycles object ids, so a
-    /// stream that ends while ducked could hand its id to an unrelated stream.
     identity: String,
     volumes: Vec<f32>,
 }
 
 #[derive(Default)]
 struct DuckState {
-    /// Latest volumes reported by each live output stream.
     live: HashMap<u32, NodeVolumes>,
-    /// Volumes captured at duck time, restored verbatim afterwards.
     saved: HashMap<u32, NodeVolumes>,
     ducked: bool,
 }
@@ -78,7 +65,6 @@ impl Ducker {
         })
     }
 
-    /// Reduce every other stream to `100 - percent` of its current volume.
     pub fn duck(&self, percent: u8) {
         if self.is_ducked() {
             return;
@@ -105,7 +91,6 @@ impl Ducker {
 
 impl Drop for Ducker {
     fn drop(&mut self) {
-        // Never leave someone's music quiet because the daemon exited.
         self.restore();
         std::thread::sleep(Duration::from_millis(80));
         if let Some(sender) = &self.sender {
@@ -117,7 +102,6 @@ impl Drop for Ducker {
     }
 }
 
-/// Extract `channelVolumes` from a Props pod.
 fn parse_channel_volumes(bytes: &[u8]) -> Option<Vec<f32>> {
     let (_, value) = PodDeserializer::deserialize_any_from(bytes).ok()?;
     let Value::Object(object) = value else {
@@ -170,8 +154,6 @@ fn run_loop(
     let core = context.connect_rc(None)?;
     let registry = core.get_registry_rc()?;
 
-    // Bound proxies and their listeners have to outlive the callback that made
-    // them, or PipeWire stops delivering their param events.
     let nodes: Rc<RefCell<HashMap<u32, (pw::node::Node, pw::node::NodeListener)>>> =
         Rc::new(RefCell::new(HashMap::new()));
 
@@ -216,8 +198,6 @@ fn run_loop(
                         return;
                     };
                     let mut state = param_state.lock().expect("duck state poisoned");
-                    // While ducked, the values coming back are our own writes;
-                    // recording them would lose the originals.
                     if state.ducked && state.saved.contains_key(&id) {
                         return;
                     }
@@ -296,8 +276,6 @@ fn run_loop(
                 let Some((node, _)) = nodes.get(id) else {
                     continue;
                 };
-                // Identity guard: if this id now belongs to a different stream,
-                // restoring would set a volume the user never chose.
                 let still_ours = command_state
                     .lock()
                     .expect("duck state poisoned")

@@ -1,9 +1,3 @@
-//! Desktop notifications over D-Bus.
-//!
-//! Spoken directly to `org.freedesktop.Notifications` rather than through
-//! notify-send, so there is no subprocess per notification and replacing an
-//! existing notification (rather than stacking a new one) actually works.
-
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -52,7 +46,6 @@ trait Notifications {
 
 pub struct Notifier {
     proxy: Option<NotificationsProxy<'static>>,
-    /// Reused so status updates replace each other instead of piling up.
     last_id: AtomicU32,
     enabled: bool,
 }
@@ -91,14 +84,11 @@ impl Notifier {
         self.enabled
     }
 
-    /// Show (or replace) a transient status notification.
     pub async fn notify(&self, summary: &str, body: &str, urgency: Urgency) {
         let Some(proxy) = &self.proxy else { return };
 
         let mut hints: HashMap<&str, Value<'_>> = HashMap::new();
         hints.insert("urgency", Value::U8(urgency.as_u8()));
-        // Transient so routine status never accumulates in the notification
-        // centre; errors are left to persist.
         if urgency != Urgency::Critical {
             hints.insert("transient", Value::Bool(true));
         }
@@ -139,7 +129,6 @@ impl Notifier {
         self.notify("Duskr", message, Urgency::Critical).await;
     }
 
-    /// Dismiss the current status notification, if any.
     pub async fn clear(&self) {
         let Some(proxy) = &self.proxy else { return };
         let id = self.last_id.swap(0, Ordering::Relaxed);
@@ -149,8 +138,6 @@ impl Notifier {
     }
 }
 
-/// Listen for logind's suspend signal, calling `on_sleep(true)` before the
-/// machine suspends and `on_sleep(false)` once it is back.
 pub async fn watch_suspend<F>(mut on_sleep: F) -> Result<()>
 where
     F: FnMut(bool) + Send + 'static,
@@ -190,7 +177,6 @@ mod tests {
     async fn a_disabled_notifier_never_touches_the_bus() {
         let notifier = Notifier::new(false).await;
         assert!(!notifier.is_enabled());
-        // Must be a silent no-op rather than an error or a panic.
         notifier.notify("Duskr", "hello", Urgency::Normal).await;
         notifier.clear().await;
     }

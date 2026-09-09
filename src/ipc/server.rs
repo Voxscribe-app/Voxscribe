@@ -1,9 +1,3 @@
-//! Unix-socket IPC server.
-//!
-//! Each connection gets its own task and requests are forwarded to the daemon
-//! over a channel, so a slow client - or a client that subscribes and then
-//! stops reading - can never hold up recording.
-
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -15,7 +9,6 @@ use crate::core::paths;
 use crate::core::state::{Event, StateHandle};
 use crate::ipc::{encode, Request, Response};
 
-/// A request paired with the channel its answer goes back on.
 pub struct Command {
     pub request: Request,
     pub reply: oneshot::Sender<Response>,
@@ -28,7 +21,6 @@ pub struct Server {
 }
 
 impl Server {
-    /// Bind the socket, replacing a stale one left by a crashed daemon.
     pub fn bind(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             paths::ensure_private_dir(parent)
@@ -49,8 +41,6 @@ impl Server {
         let listener =
             UnixListener::bind(path).with_context(|| format!("binding {}", path.display()))?;
 
-        // The socket lives in a 0700 directory, but be explicit: this is a
-        // control channel that can type into the user's session.
         let mut perms = std::fs::metadata(path)?.permissions();
         std::os::unix::fs::PermissionsExt::set_mode(&mut perms, 0o600);
         std::fs::set_permissions(path, perms)?;
@@ -65,7 +55,6 @@ impl Server {
         &self.path
     }
 
-    /// Accept connections until `shutdown` fires.
     pub async fn run(
         self,
         commands: mpsc::Sender<Command>,
@@ -102,7 +91,6 @@ impl Drop for Server {
     }
 }
 
-/// A socket file with nothing listening is a leftover, not a running daemon.
 fn is_live(path: &Path) -> bool {
     std::os::unix::net::UnixStream::connect(path).is_ok()
 }
@@ -131,8 +119,6 @@ async fn serve(
         };
 
         if matches!(request, Request::Subscribe) {
-            // The current state goes out first so a subscriber never has to
-            // also poll for where things stand.
             let snapshot = Response::Event(Event::State(state.get()));
             write_half.write_all(encode(&snapshot)?.as_bytes()).await?;
             return stream_events(write_half, state).await;
@@ -166,6 +152,7 @@ async fn stream_events(
     state: StateHandle,
 ) -> Result<()> {
     let mut events = state.subscribe_events();
+    let _watcher = state.watcher();
     loop {
         match events.recv().await {
             Ok(event) => {
@@ -181,8 +168,6 @@ async fn stream_events(
                     return Ok(());
                 }
             }
-            // A subscriber that fell behind gets the current state rather than
-            // a gap it cannot detect.
             Err(broadcast::error::RecvError::Lagged(skipped)) => {
                 tracing::debug!("IPC subscriber lagged {skipped} events");
                 let snapshot = Response::Event(Event::State(state.get()));

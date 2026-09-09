@@ -103,8 +103,6 @@ impl Engine {
         validate_model_dir(model_dir)?;
         let config = match provider {
             Provider::Cpu => ExecutionConfig::new().with_execution_provider(ExecutionProvider::Cpu),
-            // error_on_failure keeps a missing CUDA provider from silently
-            // degrading to CPU inference.
             Provider::Cuda => ExecutionConfig::new().with_custom_configure(|builder| {
                 Ok(builder.with_execution_providers([ort::ep::CUDA::default()
                     .build()
