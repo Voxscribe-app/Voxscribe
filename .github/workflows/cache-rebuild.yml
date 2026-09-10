@@ -1,0 +1,15 @@
+name: Rebuild cargo cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      cache_prefix:
+        description: New cache prefix key (bump to discard the old cache)
+        type: string
+        default: v1
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      cache_prefix: ${{ inputs.cache_prefix }}

@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: ["release"]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      cache_prefix:
+        description: Cache prefix key, change to force a cold cache
+        type: string
+        default: v1
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [cuda, vulkan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang libclang-dev pkg-config \
+            libpipewire-0.3-dev libwayland-dev
+          if [ "${{ matrix.backend }}" = "vulkan" ]; then
+            sudo apt-get install -y --no-install-recommends libvulkan-dev glslang-tools
+          fi
+
+      - name: Install CUDA toolkit
+        if: matrix.backend == 'cuda'
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev"]'
+
+      - name: Point bindgen at the clang builtin headers
+        run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(cc -print-file-name=include)" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: useblacksmith/rust-cache@v3
+        with:
+          prefix-key: ${{ inputs.cache_prefix || 'v1' }}
+          shared-key: ${{ matrix.backend }}
+
+      - name: Build
+        run: cargo build --release -p duskr --features ${{ matrix.backend }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: duskr-${{ matrix.backend }}
+          path: target/release/duskr
