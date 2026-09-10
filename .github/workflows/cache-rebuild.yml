@@ -2,14 +2,20 @@ name: Rebuild cargo cache
 
 on:
   workflow_dispatch:
-    inputs:
-      cache_prefix:
-        description: New cache prefix key (bump to discard the old cache)
-        type: string
-        default: v1
 
 jobs:
+  purge:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      # The cache action never overwrites an existing key, so the old entries
+      # have to go before a build can repopulate them.
+      - name: Delete existing caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache delete --all --repo "$GITHUB_REPOSITORY" || true
+
   build:
+    needs: purge
     uses: ./.github/workflows/build.yml
-    with:
-      cache_prefix: ${{ inputs.cache_prefix }}

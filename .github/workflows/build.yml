@@ -5,11 +5,6 @@ on:
     branches: ["release"]
   workflow_dispatch:
   workflow_call:
-    inputs:
-      cache_prefix:
-        description: Cache prefix key, change to force a cold cache
-        type: string
-        default: v1
 
 env:
   CARGO_TERM_COLOR: always
@@ -48,7 +43,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          prefix-key: ${{ inputs.cache_prefix || 'v1' }}
           shared-key: ${{ matrix.backend }}
 
       - name: Build
