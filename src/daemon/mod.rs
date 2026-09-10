@@ -58,7 +58,7 @@ pub struct Daemon {
 }
 
 pub async fn run() -> Result<()> {
-    let config = Arc::new(crate::core::firstrun::ensure().await?);
+    let config = Arc::new(Config::load_or_default());
     let state = StateHandle::new(Snapshot {
         mode: config.general.recording_mode.as_str().to_string(),
         language: config.general.language.clone(),

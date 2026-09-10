@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::core::config::{Config, OsdMode, RemoteProtocol};
 use crate::core::paths;
@@ -18,7 +18,7 @@ use crate::ipc::{self, Request, Response};
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -199,7 +199,11 @@ pub async fn run() -> Result<()> {
 }
 
 async fn run_with(cli: Cli) -> Result<()> {
-    match cli.command {
+    let Some(command) = cli.command else {
+        return bare().await;
+    };
+
+    match command {
         Command::Daemon => crate::daemon::run().await,
         Command::Toggle(arg) => {
             call(Request::Toggle {
@@ -231,6 +235,18 @@ async fn run_with(cli: Cli) -> Result<()> {
         Command::Osd { seconds } => osd_preview(seconds),
         Command::Doctor { watch } => doctor(watch).await,
     }
+}
+
+/// `duskr` on its own: set the machine up the first time, otherwise the help.
+async fn bare() -> Result<()> {
+    if paths::config_file().exists() {
+        Cli::command().print_help()?;
+        println!();
+        return Ok(());
+    }
+    crate::core::firstrun::ensure().await?;
+    println!("run `duskr daemon` to start, or `duskr service enable` to start it at login");
+    Ok(())
 }
 
 async fn call(request: Request) -> Result<()> {
@@ -764,6 +780,7 @@ mod tests {
     #[test]
     fn required_commands_parse() {
         for args in [
+            vec!["duskr"],
             vec!["duskr", "toggle"],
             vec!["duskr", "toggle", "--language", "fr"],
             vec!["duskr", "model", "directory"],
