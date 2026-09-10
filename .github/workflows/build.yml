@@ -17,7 +17,7 @@ jobs:
       matrix:
         backend: [cuda, vulkan]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies
         run: |
@@ -31,10 +31,14 @@ jobs:
 
       - name: Install CUDA toolkit
         if: matrix.backend == 'cuda'
-        uses: Jimver/cuda-toolkit@v0.2.24
-        with:
-          method: network
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev"]'
+        run: |
+          curl -fsSLO https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-12-6 cuda-cudart-dev-12-6 cuda-cccl-12-6 libcublas-dev-12-6
+          echo "CUDA_PATH=/usr/local/cuda-12.6" >> "$GITHUB_ENV"
+          echo "/usr/local/cuda-12.6/bin" >> "$GITHUB_PATH"
 
       - name: Point bindgen at the clang builtin headers
         run: echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(cc -print-file-name=include)" >> "$GITHUB_ENV"
@@ -48,7 +52,7 @@ jobs:
       - name: Build
         run: cargo build --release -p duskr --features ${{ matrix.backend }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: duskr-${{ matrix.backend }}
           path: target/release/duskr
