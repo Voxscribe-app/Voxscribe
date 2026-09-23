@@ -30,14 +30,13 @@ lewton = "0.10"
 libc = "0.2"
 pipewire = "0.10"
 regex = "1.11"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "multipart", "query"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "stream", "multipart", "query", "form"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util", "signal", "process", "fs"] }
 toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-translators = { version = "0.2.0", default-features = false, features = ["tokio-async", "google"] }
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 whisper-rs = { version = "0.16", optional = true }

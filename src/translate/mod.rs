@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use translators::{GoogleTranslator, Translator};
 
 use crate::core::config::{normalize_language, Config};
 
@@ -78,23 +77,43 @@ pub async fn translate(
     target: &str,
     timeout: Duration,
 ) -> Result<String> {
-    let translator = GoogleTranslator {
-        timeout: timeout.as_secs().max(1) as usize,
-        ..GoogleTranslator::default()
-    };
-
-    let translated = translator
-        .translate_async(text, source, target)
+    let from = if source.is_empty() { "auto" } else { source };
+    let translated = request_gtx(text, from, target, timeout)
         .await
-        .with_context(|| {
-            let from = if source.is_empty() { "auto" } else { source };
-            format!("translating from {from} to {target}")
-        })?;
+        .with_context(|| format!("translating from {from} to {target}"))?;
 
     if translated.trim().is_empty() {
         anyhow::bail!("the translator returned an empty result");
     }
     Ok(translated)
+}
+
+/// Google's `gtx` JSON endpoint; the scraped mobile page gets captcha-walled with 429s.
+const GTX_URL: &str = "https://translate.googleapis.com/translate_a/single";
+
+async fn request_gtx(text: &str, source: &str, target: &str, timeout: Duration) -> Result<String> {
+    let response = reqwest::Client::builder()
+        .timeout(timeout)
+        .build()?
+        .post(GTX_URL)
+        .query(&[("client", "gtx"), ("sl", source), ("tl", target), ("dt", "t")])
+        .form(&[("q", text)])
+        .send()
+        .await?
+        .error_for_status()?;
+    parse_gtx(&response.json::<serde_json::Value>().await?)
+}
+
+/// The reply is `[[["translated", "original", ...], ...], ...]`, one entry per sentence.
+fn parse_gtx(body: &serde_json::Value) -> Result<String> {
+    let segments = body
+        .get(0)
+        .and_then(|v| v.as_array())
+        .context("unexpected translator response")?;
+    Ok(segments
+        .iter()
+        .filter_map(|segment| segment.get(0).and_then(|v| v.as_str()))
+        .collect())
 }
 
 #[cfg(test)]
@@ -156,6 +175,17 @@ mod tests {
         let mut config = config(Some("fr"), Some("fr"));
         config.translation.skip_when_same = false;
         assert_eq!(wanted(&config), Some(("fr".into(), "fr".into())));
+    }
+
+    #[test]
+    fn gtx_segments_are_joined_in_order() {
+        let body = serde_json::json!([
+            [["Hola. ", "Hello there. ", null, null, 10], ["¿Cómo estás?", "How are you?"]],
+            null,
+            "en"
+        ]);
+        assert_eq!(parse_gtx(&body).unwrap(), "Hola. ¿Cómo estás?");
+        assert!(parse_gtx(&serde_json::json!({})).is_err());
     }
 
     #[tokio::test]
