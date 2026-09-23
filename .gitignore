@@ -6,9 +6,6 @@
 /.cache/
 
 
-
-/scripts
-
 # Cargo registry credentials. The project config is kept.
 /.cargo/*
 !/.cargo/config.toml

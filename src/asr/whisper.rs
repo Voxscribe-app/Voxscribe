@@ -109,7 +109,7 @@ mod imp {
                 bail!(
                     "asr.whisper.use_gpu is set, but this binary was built without a GPU \
                      backend, so whisper would run on the CPU instead. Rebuild with \
-                     `./scripts/build.sh --release --features cuda` (or `--features vulkan`), \
+                     `cargo build --release --features cuda` (or `--features vulkan`), \
                      or set asr.whisper.use_gpu = false to accept CPU inference."
                 );
             }
