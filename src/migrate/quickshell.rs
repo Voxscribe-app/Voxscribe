@@ -67,10 +67,10 @@ pub fn install(detection: &Detection) -> Result<InstallReport> {
     )
     .with_context(|| format!("writing {}", service_path.display()))?;
 
-    let native_path = services_dir.join("DuskrService.qml");
+    let native_path = services_dir.join("VoxscribeService.qml");
     std::fs::write(
         &native_path,
-        include_str!("../../assets/quickshell/DuskrService.qml"),
+        include_str!("../../assets/quickshell/VoxscribeService.qml"),
     )
     .with_context(|| format!("writing {}", native_path.display()))?;
 
@@ -127,7 +127,7 @@ mod tests {
         );
 
         let installed = std::fs::read_to_string(&report.service_written).unwrap();
-        assert!(installed.contains("duskr"));
+        assert!(installed.contains("voxscribe"));
         for property in ["available", "state", "tooltip", "level", "levelActive"] {
             assert!(installed.contains(property), "{property} missing");
         }

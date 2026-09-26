@@ -529,7 +529,7 @@ impl Config {
     pub fn save_to(&self, path: &Path) -> Result<()> {
         self.validate()?;
         let body = toml::to_string_pretty(self)?;
-        let text = format!("# Duskr configuration - see `duskr config help`.\n{body}");
+        let text = format!("# Voxscribe configuration - see `voxscribe config help`.\n{body}");
         paths::write_atomic(path, text.as_bytes())
             .with_context(|| format!("writing {}", path.display()))?;
         let mut permissions = std::fs::metadata(path)?.permissions();
@@ -539,7 +539,7 @@ impl Config {
     }
 
     pub fn models_dir(&self) -> PathBuf {
-        if let Some(dir) = std::env::var_os("DUSKR_MODEL_DIR") {
+        if let Some(dir) = std::env::var_os("VOXSCRIBE_MODEL_DIR") {
             let dir = PathBuf::from(dir);
             if !dir.as_os_str().is_empty() {
                 return dir;
@@ -673,9 +673,9 @@ mod tests {
         let mut config = Config::default();
         config.models.dir = Some(PathBuf::from("/configured"));
         assert_eq!(config.models_dir(), PathBuf::from("/configured"));
-        std::env::set_var("DUSKR_MODEL_DIR", "/override");
+        std::env::set_var("VOXSCRIBE_MODEL_DIR", "/override");
         assert_eq!(config.models_dir(), PathBuf::from("/override"));
         assert_eq!(config.models_dir_configured(), PathBuf::from("/configured"));
-        std::env::remove_var("DUSKR_MODEL_DIR");
+        std::env::remove_var("VOXSCRIBE_MODEL_DIR");
     }
 }

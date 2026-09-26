@@ -11,7 +11,7 @@ use pw::spa::pod::{
 use pw::spa::utils::SpaTypes;
 use pw::types::ObjectType;
 
-const OWN_NODES: &[&str] = &["duskr-feedback", "duskr-capture"];
+const OWN_NODES: &[&str] = &["voxscribe-feedback", "voxscribe-capture"];
 
 #[derive(Debug, Clone, PartialEq)]
 struct NodeVolumes {
@@ -46,7 +46,7 @@ impl Ducker {
 
         let thread_state = Arc::clone(&state);
         let handle = std::thread::Builder::new()
-            .name("duskr-ducker".into())
+            .name("voxscribe-ducker".into())
             .spawn(move || {
                 if let Err(err) = run_loop(thread_state, receiver, &ready_tx) {
                     let _ = ready_tx.send(Err(err));
@@ -345,8 +345,8 @@ mod tests {
     }
 
     #[test]
-    fn duskr_own_nodes_are_never_ducked() {
-        assert!(OWN_NODES.contains(&"duskr-feedback"));
-        assert!(OWN_NODES.contains(&"duskr-capture"));
+    fn voxscribe_own_nodes_are_never_ducked() {
+        assert!(OWN_NODES.contains(&"voxscribe-feedback"));
+        assert!(OWN_NODES.contains(&"voxscribe-capture"));
     }
 }

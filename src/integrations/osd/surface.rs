@@ -40,7 +40,7 @@ impl Pool {
         let slot_len = (stride * height) as usize;
         let len = slot_len * SLOTS;
 
-        let fd = unsafe { libc::memfd_create(c"duskr-osd".as_ptr(), libc::MFD_CLOEXEC) };
+        let fd = unsafe { libc::memfd_create(c"voxscribe-osd".as_ptr(), libc::MFD_CLOEXEC) };
         if fd < 0 {
             return Err(std::io::Error::last_os_error()).context("creating the OSD shm file");
         }
@@ -374,7 +374,7 @@ impl Window {
             &surface,
             None,
             Layer::Overlay,
-            "duskr-osd".into(),
+            "voxscribe-osd".into(),
             &qh,
             (),
         );

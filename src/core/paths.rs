@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-pub const APP: &str = "duskr";
+pub const APP: &str = "voxscribe";
 
 fn env_path(key: &str) -> Option<PathBuf> {
     std::env::var_os(key)
@@ -38,11 +38,11 @@ pub fn config_file() -> PathBuf {
 }
 
 pub fn socket_path() -> PathBuf {
-    runtime_dir().join("duskr.sock")
+    runtime_dir().join("voxscribe.sock")
 }
 
 pub fn pid_file() -> PathBuf {
-    runtime_dir().join("duskr.pid")
+    runtime_dir().join("voxscribe.pid")
 }
 
 pub fn state_file() -> PathBuf {

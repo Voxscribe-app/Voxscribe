@@ -44,7 +44,7 @@ enum Backend {
 }
 
 #[derive(Parser)]
-#[command(version, about = "Remote ASR server for Duskr")]
+#[command(version, about = "Remote ASR server for Voxscribe")]
 struct Cli {
     #[command(subcommand)]
     command: ServerCommand,
@@ -67,7 +67,7 @@ enum ServerCommand {
     Serve {
         #[arg(long, default_value = "127.0.0.1:8787")]
         bind: SocketAddr,
-        #[arg(long, env = "DUSKR_SERVER_TOKEN")]
+        #[arg(long, env = "VOXSCRIBE_SERVER_TOKEN")]
         token: Option<String>,
         #[arg(long, conflicts_with = "token")]
         token_file: Option<PathBuf>,
@@ -220,7 +220,7 @@ fn authorize(headers: &HeaderMap, token: &Option<String>) -> Result<(), ApiError
 }
 
 async fn health() -> Json<Value> {
-    Json(json!({"ok": true, "service": "duskr-server"}))
+    Json(json!({"ok": true, "service": "voxscribe-server"}))
 }
 
 async fn status_handler(
@@ -356,7 +356,7 @@ fn install_service(
     let executable = std::env::current_exe()?;
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/root"));
     let unit = format!(
-        "[Unit]\nDescription=Duskr remote ASR server\nAfter=network-online.target\nWants=network-online.target\n\n\
+        "[Unit]\nDescription=Voxscribe remote ASR server\nAfter=network-online.target\nWants=network-online.target\n\n\
          [Service]\nType=simple\nEnvironment=HOME={home}\n\
          ExecStart={executable} serve --bind {bind} --token-file {token_file} --backend {backend} \
          --model-dir {model_dir} --provider {provider} --nemo-data-dir {nemo_data_dir} \
@@ -374,7 +374,7 @@ fn install_service(
         nemo_model = nemo_model,
         precision = precision.as_str(),
     );
-    let path = Path::new("/etc/systemd/system/duskr-server.service");
+    let path = Path::new("/etc/systemd/system/voxscribe-server.service");
     std::fs::write(path, unit)?;
     run(Command::new("systemctl").arg("daemon-reload"))?;
     println!("service installed at {}", path.display());
@@ -407,7 +407,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "duskr_server=info".into()),
+                .unwrap_or_else(|_| "voxscribe_server=info".into()),
         )
         .init();
 
@@ -486,7 +486,7 @@ async fn main() -> Result<()> {
             let token = load_token(token, token_file.as_deref())?;
             if token.is_none() && !insecure_no_auth {
                 bail!(
-                    "authentication is required; set DUSKR_SERVER_TOKEN, use --token-file, or pass --insecure-no-auth"
+                    "authentication is required; set VOXSCRIBE_SERVER_TOKEN, use --token-file, or pass --insecure-no-auth"
                 );
             }
 

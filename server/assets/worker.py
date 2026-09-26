@@ -10,10 +10,10 @@ import sys
 import time
 import traceback
 
-PROTOCOL_PREFIX = "@@DUSKR@@"
+PROTOCOL_PREFIX = "@@VOXSCRIBE@@"
 
-MODEL_NAME = os.environ.get("DUSKR_NEMO_MODEL", "nvidia/parakeet-unified-en-0.6b")
-REQUESTED_PRECISION = os.environ.get("DUSKR_NEMO_PRECISION", "auto").lower()
+MODEL_NAME = os.environ.get("VOXSCRIBE_NEMO_MODEL", "nvidia/parakeet-unified-en-0.6b")
+REQUESTED_PRECISION = os.environ.get("VOXSCRIBE_NEMO_PRECISION", "auto").lower()
 
 
 def send(payload):

@@ -11,7 +11,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use crate::{run, Transcription, SAMPLE_RATE};
 
-const PROTOCOL_PREFIX: &str = "@@DUSKR@@";
+const PROTOCOL_PREFIX: &str = "@@VOXSCRIBE@@";
 const WORKER_SOURCE: &str = include_str!("../assets/worker.py");
 const CUDA_126_INDEX: &str = "https://download.pytorch.org/whl/cu126";
 
@@ -48,7 +48,7 @@ impl Paths {
             Some(path) => path,
             None => dirs::data_dir()
                 .context("XDG data directory is unavailable")?
-                .join("duskr/server/nemo"),
+                .join("voxscribe/server/nemo"),
         };
         let venv_dir = data_dir.join(".venv");
         Ok(Self {
@@ -196,7 +196,7 @@ impl Worker {
 
         if !paths.venv_python.is_file() {
             bail!(
-                "NeMo environment missing at {}; run `duskr-server setup --backend nemo` first",
+                "NeMo environment missing at {}; run `voxscribe-server setup --backend nemo` first",
                 paths.venv_python.display()
             );
         }
@@ -204,8 +204,8 @@ impl Worker {
         let mut child = Command::new(&paths.venv_python)
             .arg("-u")
             .arg(&paths.worker)
-            .env("DUSKR_NEMO_MODEL", model)
-            .env("DUSKR_NEMO_PRECISION", precision.as_str())
+            .env("VOXSCRIBE_NEMO_MODEL", model)
+            .env("VOXSCRIBE_NEMO_PRECISION", precision.as_str())
             .env("TOKENIZERS_PARALLELISM", "false")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -236,7 +236,7 @@ impl Worker {
 
     pub async fn transcribe(&mut self, pcm: &[u8]) -> Result<Transcription> {
         let mut temp = TempBuilder::new()
-            .prefix("duskr-")
+            .prefix("voxscribe-")
             .suffix(".wav")
             .tempfile()
             .context("creating temporary WAV")?;
@@ -292,7 +292,7 @@ impl Worker {
                     return serde_json::from_str(payload)
                         .with_context(|| format!("bad worker protocol JSON: {payload}"))
                 }
-                None => tracing::debug!(target: "duskr_server::worker", "{line}"),
+                None => tracing::debug!(target: "voxscribe_server::worker", "{line}"),
             }
         }
     }

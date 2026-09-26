@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hyprwhspr_backend_names_map_onto_duskr_backends() {
+    fn hyprwhspr_backend_names_map_onto_voxscribe_backends() {
         assert_eq!(canonical_backend_id("pywhispercpp"), "whisper");
         assert_eq!(canonical_backend_id("faster-whisper"), "whisper");
         assert_eq!(canonical_backend_id("NVIDIA"), "whisper");

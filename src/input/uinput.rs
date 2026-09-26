@@ -20,7 +20,7 @@ impl VirtualKeyboard {
         }
 
         let device = VirtualDevice::builder()?
-            .name("Duskr Virtual Keyboard")
+            .name("Voxscribe Virtual Keyboard")
             .with_keys(&keys)?
             .build()?;
 

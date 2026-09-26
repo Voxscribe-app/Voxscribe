@@ -143,7 +143,7 @@ impl Feedback {
         let queue = Arc::clone(&self.queue);
 
         let handle = std::thread::Builder::new()
-            .name("duskr-feedback".into())
+            .name("voxscribe-feedback".into())
             .spawn(move || {
                 if let Err(err) = playback_loop(queue, receiver, &ready_tx) {
                     let _ = ready_tx.send(Err(err));
@@ -209,11 +209,11 @@ fn playback_loop(
         *pw::keys::MEDIA_TYPE => "Audio",
         *pw::keys::MEDIA_CATEGORY => "Playback",
         *pw::keys::MEDIA_ROLE => "Notification",
-        *pw::keys::APP_NAME => "Duskr",
-        *pw::keys::NODE_NAME => "duskr-feedback",
+        *pw::keys::APP_NAME => "Voxscribe",
+        *pw::keys::NODE_NAME => "voxscribe-feedback",
     };
 
-    let stream = pw::stream::StreamRc::new(core.clone(), "duskr-feedback", props)?;
+    let stream = pw::stream::StreamRc::new(core.clone(), "voxscribe-feedback", props)?;
 
     let process_queue = Arc::clone(&queue);
     let _listener = stream

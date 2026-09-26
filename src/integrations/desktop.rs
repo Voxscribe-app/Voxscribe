@@ -1,13 +1,13 @@
 use crate::core::config::Config;
 
 pub fn waybar_module() -> String {
-    r#"// Add to ~/.config/waybar/config.jsonc and include "custom/duskr" in a module list.
-"custom/duskr": {
+    r#"// Add to ~/.config/waybar/config.jsonc and include "custom/voxscribe" in a module list.
+"custom/voxscribe": {
     "format": "{}",
     "return-type": "json",
-    "exec": "duskr waybar --watch",
-    "on-click": "duskr toggle",
-    "on-click-right": "duskr cancel",
+    "exec": "voxscribe waybar --watch",
+    "on-click": "voxscribe toggle",
+    "on-click-right": "voxscribe cancel",
     "tooltip": true
 }
 "#
@@ -15,13 +15,13 @@ pub fn waybar_module() -> String {
 }
 
 pub fn waybar_style() -> String {
-    r#"#custom-duskr { padding: 0 8px; }
-#custom-duskr.stopped    { color: @text; }
-#custom-duskr.starting   { color: @overlay1; }
-#custom-duskr.recording  { color: @red; }
-#custom-duskr.processing { color: @yellow; }
-#custom-duskr.paused     { color: @peach; }
-#custom-duskr.error      { color: @maroon; }
+    r#"#custom-voxscribe { padding: 0 8px; }
+#custom-voxscribe.stopped    { color: @text; }
+#custom-voxscribe.starting   { color: @overlay1; }
+#custom-voxscribe.recording  { color: @red; }
+#custom-voxscribe.processing { color: @yellow; }
+#custom-voxscribe.paused     { color: @peach; }
+#custom-voxscribe.error      { color: @maroon; }
 "#
     .to_string()
 }
@@ -29,14 +29,14 @@ pub fn waybar_style() -> String {
 pub fn hyprland_config(config: &Config) -> String {
     let primary = to_hypr_bind(&config.shortcuts.primary);
     let mut out = format!(
-        "# Duskr - compositor bindings.\n\
-         # Set shortcuts.primary = \"\" in Duskr's config if you use these instead\n\
+        "# Voxscribe - compositor bindings.\n\
+         # Set shortcuts.primary = \"\" in Voxscribe's config if you use these instead\n\
          # of its evdev listener, so a key press is not handled twice.\n\
-         bind = {primary}, exec, duskr toggle\n"
+         bind = {primary}, exec, voxscribe toggle\n"
     );
     if let Some(cancel) = &config.shortcuts.cancel {
         out.push_str(&format!(
-            "bind = {}, exec, duskr cancel\n",
+            "bind = {}, exec, voxscribe cancel\n",
             to_hypr_bind(cancel)
         ));
     }
@@ -47,7 +47,7 @@ pub fn hyprland_config(config: &Config) -> String {
             .as_deref()
             .unwrap_or("en");
         out.push_str(&format!(
-            "bind = {}, exec, duskr toggle --language {language}\n",
+            "bind = {}, exec, voxscribe toggle --language {language}\n",
             to_hypr_bind(secondary)
         ));
     }
@@ -72,9 +72,9 @@ fn to_hypr_bind(chord: &str) -> String {
 
 pub fn kde_desktop_entry() -> String {
     r#"[Desktop Entry]
-Name=Duskr
-Comment=Toggle Duskr dictation
-Exec=duskr toggle
+Name=Voxscribe
+Comment=Toggle Voxscribe dictation
+Exec=voxscribe toggle
 Icon=audio-input-microphone
 Type=Application
 NoDisplay=true
@@ -84,7 +84,7 @@ X-KDE-GlobalAccel-CommandShortcut=true
 }
 
 pub fn quickshell_service() -> String {
-    include_str!("../../assets/quickshell/DuskrService.qml").to_string()
+    include_str!("../../assets/quickshell/VoxscribeService.qml").to_string()
 }
 
 #[cfg(test)]
@@ -107,15 +107,15 @@ mod tests {
         config.shortcuts.secondary_language = Some("it".into());
 
         let rendered = hyprland_config(&config);
-        assert!(rendered.contains("bind = SUPER ALT, D, exec, duskr toggle"));
-        assert!(rendered.contains("bind = SUPER, ESCAPE, exec, duskr cancel"));
-        assert!(rendered.contains("duskr toggle --language it"));
+        assert!(rendered.contains("bind = SUPER ALT, D, exec, voxscribe toggle"));
+        assert!(rendered.contains("bind = SUPER, ESCAPE, exec, voxscribe cancel"));
+        assert!(rendered.contains("voxscribe toggle --language it"));
     }
 
     #[test]
     fn the_waybar_module_drives_itself_from_the_event_stream() {
         let module = waybar_module();
-        assert!(module.contains("duskr waybar --watch"));
+        assert!(module.contains("voxscribe waybar --watch"));
         assert!(module.contains("\"return-type\": \"json\""));
     }
 

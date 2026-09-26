@@ -81,17 +81,17 @@ impl Default for Snapshot {
 impl Snapshot {
     pub fn tooltip(&self) -> String {
         let mut lines = vec![match self.phase {
-            Phase::Starting => "Duskr: starting".to_string(),
-            Phase::Idle if self.ready => "Duskr: ready".to_string(),
-            Phase::Idle if self.message.is_empty() => "Duskr: model unloaded".to_string(),
-            Phase::Idle => format!("Duskr: {}", self.message),
+            Phase::Starting => "Voxscribe: starting".to_string(),
+            Phase::Idle if self.ready => "Voxscribe: ready".to_string(),
+            Phase::Idle if self.message.is_empty() => "Voxscribe: model unloaded".to_string(),
+            Phase::Idle => format!("Voxscribe: {}", self.message),
             Phase::Recording => format!(
-                "Duskr: recording ({:.1}s)",
+                "Voxscribe: recording ({:.1}s)",
                 self.recording_ms as f64 / 1000.0
             ),
-            Phase::Paused => format!("Duskr: paused ({} segments)", self.segments),
-            Phase::Processing => "Duskr: transcribing".to_string(),
-            Phase::Error => format!("Duskr: {}", self.message),
+            Phase::Paused => format!("Voxscribe: paused ({} segments)", self.segments),
+            Phase::Processing => "Voxscribe: transcribing".to_string(),
+            Phase::Error => format!("Voxscribe: {}", self.message),
         }];
         let model = self.model.clone().unwrap_or_else(|| "-".into());
         lines.push(format!("{} · {}", self.backend, model));
@@ -271,7 +271,7 @@ mod tests {
             ..Snapshot::default()
         };
         let tooltip = snapshot.tooltip();
-        assert!(tooltip.starts_with("Duskr: recording (2.5s)"));
+        assert!(tooltip.starts_with("Voxscribe: recording (2.5s)"));
         assert!(tooltip.contains("remote · parakeet"));
     }
 
@@ -282,7 +282,7 @@ mod tests {
             ready: true,
             ..Snapshot::default()
         };
-        assert!(loaded.tooltip().starts_with("Duskr: ready"));
+        assert!(loaded.tooltip().starts_with("Voxscribe: ready"));
 
         let unloaded = Snapshot {
             phase: Phase::Idle,
@@ -290,7 +290,7 @@ mod tests {
             message: "model unloaded".into(),
             ..Snapshot::default()
         };
-        assert!(unloaded.tooltip().starts_with("Duskr: model unloaded"));
+        assert!(unloaded.tooltip().starts_with("Voxscribe: model unloaded"));
     }
 
     #[test]

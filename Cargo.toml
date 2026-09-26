@@ -1,11 +1,11 @@
 [package]
-name = "duskr"
+name = "voxscribe"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Native system-wide speech-to-text for Linux"
 license = "MIT"
-repository = "https://code.styna.net/projects/Duskr"
+repository = "https://code.styna.net/projects/Voxscribe"
 
 [workspace]
 members = ["server"]

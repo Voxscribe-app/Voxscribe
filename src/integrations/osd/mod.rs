@@ -42,7 +42,7 @@ impl Osd {
         let (tx, rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
         let thread = std::thread::Builder::new()
-            .name("duskr-osd".into())
+            .name("voxscribe-osd".into())
             .spawn(move || {
                 let window = match Window::open(placement) {
                     Ok(window) => {

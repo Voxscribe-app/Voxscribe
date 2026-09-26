@@ -315,7 +315,7 @@ pub fn set_for(selection: Selection, serve_for: Duration) -> Result<ClipboardOwn
     let (ready_tx, ready_rx) = std::sync::mpsc::channel::<Result<()>>();
 
     std::thread::Builder::new()
-        .name("duskr-clipboard".into())
+        .name("voxscribe-clipboard".into())
         .spawn(move || {
             let mut session = match Session::connect() {
                 Ok(session) => {

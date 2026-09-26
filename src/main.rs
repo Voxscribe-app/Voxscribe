@@ -8,7 +8,7 @@ async fn main() {
         .with_writer(std::io::stderr)
         .init();
 
-    if let Err(error) = duskr::cli::run().await {
+    if let Err(error) = voxscribe::cli::run().await {
         eprintln!("error: {error:#}");
         std::process::exit(1);
     }

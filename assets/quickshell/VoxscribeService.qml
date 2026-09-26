@@ -11,7 +11,7 @@ Item {
 
     property bool available: false
     property string state: "stopped"
-    property string tooltip: "Duskr is unavailable"
+    property string tooltip: "Voxscribe is unavailable"
     property real level: 0
     property bool levelActive: false
     property bool ready: false
@@ -36,8 +36,8 @@ Item {
         if (!command || actionProcess.running)
             return
         actionProcess.command = command === "restart"
-            ? ["systemctl", "--user", "restart", "duskr.service"]
-            : ["duskr", command]
+            ? ["systemctl", "--user", "restart", "voxscribe.service"]
+            : ["voxscribe", command]
         actionProcess.running = true
     }
 
@@ -78,7 +78,7 @@ Item {
         available = false
         ready = false
         state = "stopped"
-        tooltip = "Duskr is unavailable"
+        tooltip = "Voxscribe is unavailable"
         level = 0
         levelActive = false
     }
@@ -86,7 +86,7 @@ Item {
     Process {
         id: watcher
         running: true
-        command: ["duskr", "quickshell", "watch"]
+        command: ["voxscribe", "quickshell", "watch"]
         stdout: SplitParser { onRead: line => service.applyLine(line) }
         onExited: {
             service.markUnavailable()

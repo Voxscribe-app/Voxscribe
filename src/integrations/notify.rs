@@ -106,7 +106,7 @@ impl Notifier {
 
         match proxy
             .notify(
-                "Duskr",
+                "Voxscribe",
                 replaces,
                 "audio-input-microphone",
                 summary,
@@ -126,7 +126,7 @@ impl Notifier {
     }
 
     pub async fn error(&self, message: &str) {
-        self.notify("Duskr", message, Urgency::Critical).await;
+        self.notify("Voxscribe", message, Urgency::Critical).await;
     }
 
     pub async fn clear(&self) {
@@ -177,7 +177,7 @@ mod tests {
     async fn a_disabled_notifier_never_touches_the_bus() {
         let notifier = Notifier::new(false).await;
         assert!(!notifier.is_enabled());
-        notifier.notify("Duskr", "hello", Urgency::Normal).await;
+        notifier.notify("Voxscribe", "hello", Urgency::Normal).await;
         notifier.clear().await;
     }
 }

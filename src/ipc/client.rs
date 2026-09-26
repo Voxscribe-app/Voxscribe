@@ -26,8 +26,8 @@ impl Client {
     pub async fn connect_to(path: &Path) -> Result<Self> {
         let stream = UnixStream::connect(path).await.map_err(|err| {
             anyhow!(
-                "cannot reach the Duskr daemon at {} ({err}) - start it with \
-                 `duskr daemon` or `systemctl --user start duskr`",
+                "cannot reach the Voxscribe daemon at {} ({err}) - start it with \
+                 `voxscribe daemon` or `systemctl --user start voxscribe`",
                 path.display()
             )
         })?;
@@ -131,7 +131,7 @@ mod tests {
             .await
             .unwrap_err()
             .to_string();
-        assert!(err.contains("duskr daemon"), "{err}");
+        assert!(err.contains("voxscribe daemon"), "{err}");
     }
 
     #[tokio::test]

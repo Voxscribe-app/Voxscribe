@@ -128,7 +128,7 @@ impl HotkeyListener {
             let shared = Arc::clone(&shared);
             let specs = specs.clone();
             std::thread::Builder::new()
-                .name("duskr-hotkeys".into())
+                .name("voxscribe-hotkeys".into())
                 .spawn(move || chord_loop(shared, specs, raw_rx, events))
                 .context("spawning the shortcut state machine")?;
         }
@@ -143,7 +143,7 @@ impl HotkeyListener {
             let shared = Arc::clone(&shared);
             let hotplug = shortcuts.hotplug;
             std::thread::Builder::new()
-                .name("duskr-kbd-scan".into())
+                .name("voxscribe-kbd-scan".into())
                 .spawn(move || scan_loop(shared, devices, filter, raw_tx, hotplug))
                 .context("spawning the keyboard scanner")?;
         }
@@ -233,16 +233,15 @@ fn scan_loop(
             let thread_devices = Arc::clone(&devices);
             let raw_tx = raw_tx.clone();
             let thread_path = path.clone();
-            if let Err(err) =
-                std::thread::Builder::new()
-                    .name("duskr-kbd".into())
-                    .spawn(move || {
-                        reader_loop(thread_shared, device, &thread_path, raw_tx);
-                        thread_devices
-                            .lock()
-                            .expect("device map poisoned")
-                            .remove(&thread_path);
-                    })
+            if let Err(err) = std::thread::Builder::new()
+                .name("voxscribe-kbd".into())
+                .spawn(move || {
+                    reader_loop(thread_shared, device, &thread_path, raw_tx);
+                    thread_devices
+                        .lock()
+                        .expect("device map poisoned")
+                        .remove(&thread_path);
+                })
             {
                 tracing::warn!("could not watch {}: {err}", path.display());
                 devices.lock().expect("device map poisoned").remove(&path);
@@ -275,7 +274,7 @@ fn enumerate_keyboards() -> Vec<(PathBuf, Device)> {
         };
         if device.name().is_some_and(|name| {
             let name = name.to_ascii_lowercase();
-            name.starts_with("duskr ") || name.contains("ydotool") || name.contains("wtype")
+            name.starts_with("voxscribe ") || name.contains("ydotool") || name.contains("wtype")
         }) {
             continue;
         }

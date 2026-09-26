@@ -19,7 +19,7 @@ const MODES: &[(RecordingMode, &str)] = &[
     (RecordingMode::LongForm, "record until you submit"),
 ];
 
-/// Load the configuration, setting Duskr up the first time it runs.
+/// Load the configuration, setting Voxscribe up the first time it runs.
 ///
 /// A fresh install has no `config.toml`, so one is written after walking
 /// through the settings that matter. Without a terminal to ask on nothing is
@@ -34,7 +34,7 @@ pub async fn ensure() -> Result<Config> {
     let model = interview(&mut config).await;
 
     // Saved before the download so an interrupted fetch still leaves the
-    // answers recorded; `duskr model download` picks up the partial file.
+    // answers recorded; `voxscribe model download` picks up the partial file.
     config.save().context("writing the initial configuration")?;
     tracing::info!("first run: created {}", path.display());
 
@@ -53,13 +53,13 @@ pub async fn ensure() -> Result<Config> {
 async fn interview(config: &mut Config) -> Option<String> {
     if unsafe { libc::isatty(libc::STDIN_FILENO) } != 1 {
         tracing::warn!(
-            "first run: writing defaults; run `duskr` in a terminal to set Duskr up, or edit {}",
+            "first run: writing defaults; run `voxscribe` in a terminal to set Voxscribe up, or edit {}",
             paths::config_file().display()
         );
         return None;
     }
 
-    eprintln!("Duskr first run. Press enter to accept the default in brackets.\n");
+    eprintln!("Voxscribe first run. Press enter to accept the default in brackets.\n");
 
     let model = ask_model(config).await;
     ask_mode(config).await;
@@ -264,7 +264,7 @@ async fn download(config: &Config, model: &str, dir: &Path) {
     match result {
         Ok(path) => tracing::info!("first run: model ready at {}", path.display()),
         Err(err) => tracing::warn!(
-            "could not download {model}: {err:#}; run `duskr model download {model}` to retry"
+            "could not download {model}: {err:#}; run `voxscribe model download {model}` to retry"
         ),
     }
 }

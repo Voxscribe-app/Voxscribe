@@ -50,9 +50,9 @@ jobs:
           shared-key: ${{ matrix.backend }}
 
       - name: Build
-        run: cargo build --release -p duskr --features ${{ matrix.backend }}
+        run: cargo build --release -p voxscribe --features ${{ matrix.backend }}
 
       - uses: actions/upload-artifact@v5
         with:
-          name: duskr-${{ matrix.backend }}
-          path: target/release/duskr
+          name: voxscribe-${{ matrix.backend }}
+          path: target/release/voxscribe

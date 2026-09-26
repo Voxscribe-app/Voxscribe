@@ -246,7 +246,7 @@ fn start_hotkeys(
         tracing::warn!("{problem}");
     }
     if specs.is_empty() {
-        tracing::warn!("no shortcuts bound; control Duskr through the CLI or IPC");
+        tracing::warn!("no shortcuts bound; control Voxscribe through the CLI or IPC");
         return None;
     }
     match HotkeyListener::start(&config.shortcuts, specs, hotkey_tx) {
@@ -316,7 +316,7 @@ impl Daemon {
             let message = "backend is still loading";
             tracing::info!("{message}; ignoring the start request");
             self.notifier
-                .notify("Duskr", message, Urgency::Normal)
+                .notify("Voxscribe", message, Urgency::Normal)
                 .await;
             return;
         }
@@ -349,7 +349,7 @@ impl Daemon {
         self.feedback.play(Sound::Start);
         if self.config.integrations.osd {
             self.notifier
-                .notify("Duskr", "Recording", Urgency::Low)
+                .notify("Voxscribe", "Recording", Urgency::Low)
                 .await;
         }
         if let Some(ducker) = &self.ducker {
@@ -397,7 +397,7 @@ impl Daemon {
         self.feedback.play(Sound::Stop);
         if self.config.integrations.osd {
             self.notifier
-                .notify("Duskr", "Transcribing", Urgency::Low)
+                .notify("Voxscribe", "Transcribing", Urgency::Low)
                 .await;
         }
 
@@ -572,7 +572,7 @@ impl Daemon {
                 let byte_limit = self.config.audio.long_form_limit_mb as usize * 1024 * 1024;
                 if byte_limit > 0 && bytes >= byte_limit {
                     self.notifier
-                        .notify("Duskr", "Long-form size limit reached", Urgency::Normal)
+                        .notify("Voxscribe", "Long-form size limit reached", Urgency::Normal)
                         .await;
                     self.stop(true).await;
                     return;
@@ -792,7 +792,7 @@ impl Daemon {
                 Response::Text {
                     text: format!(
                         "backend set to '{id}'; restart the daemon to load it \
-                         (systemctl --user restart duskr)"
+                         (systemctl --user restart voxscribe)"
                     ),
                 }
             }
@@ -810,7 +810,7 @@ impl Daemon {
         Response::Text {
             text: format!(
                 "model set to '{name}'; restart the daemon to load it \
-                 (systemctl --user restart duskr)"
+                 (systemctl --user restart voxscribe)"
             ),
         }
     }

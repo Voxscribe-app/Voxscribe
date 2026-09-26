@@ -1,4 +1,4 @@
-# Building Duskr
+# Building Voxscribe
 
 ## Requirements
 
@@ -28,7 +28,7 @@ cargo build --release --features vulkan   # anything else, needs glslc and vulka
 Vulkan needs `glslc` (Fedora: `glslc`, Debian/Ubuntu: `glslc`) and
 `/usr/include/vulkan/vulkan.h` (`vulkan-headers` / `libvulkan-dev`).
 
-The `duskr-server` crate builds `ort` and `parakeet-rs` with CUDA enabled
+The `voxscribe-server` crate builds `ort` and `parakeet-rs` with CUDA enabled
 independently of these features.
 
 ## bindgen

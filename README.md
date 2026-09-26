@@ -1,6 +1,6 @@
-## Duskr
+## Voxscribe
 
-DuskR is a full rust implementation of STT. built for all linux setups.
+Voxscribe is a full rust implementation of STT. built for all linux setups.
 
 ### Features
 

@@ -75,7 +75,7 @@ impl Capture {
         let thread_shared = Arc::clone(&shared);
         let thread_config = config.clone();
         let handle = std::thread::Builder::new()
-            .name("duskr-pipewire".into())
+            .name("voxscribe-pipewire".into())
             .spawn(move || {
                 if let Err(err) = run_loop(
                     thread_config,
@@ -221,14 +221,14 @@ fn run_loop(
         *pw::keys::MEDIA_TYPE => "Audio",
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Communication",
-        *pw::keys::APP_NAME => "Duskr",
-        *pw::keys::NODE_NAME => "duskr-capture",
+        *pw::keys::APP_NAME => "Voxscribe",
+        *pw::keys::NODE_NAME => "voxscribe-capture",
     };
     if let Some(target) = config.device.as_ref().or(config.device_match.as_ref()) {
         props.insert("target.object", target.clone());
     }
 
-    let stream = pw::stream::StreamRc::new(core.clone(), "duskr-capture", props)
+    let stream = pw::stream::StreamRc::new(core.clone(), "voxscribe-capture", props)
         .context("creating the capture stream")?;
 
     let user_data = UserData {

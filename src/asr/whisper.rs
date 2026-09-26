@@ -99,7 +99,7 @@ mod imp {
         fn open(&self) -> Result<Loaded> {
             if !self.model_path.exists() {
                 bail!(
-                    "model '{}' not found at {} - run `duskr model download {}`",
+                    "model '{}' not found at {} - run `voxscribe model download {}`",
                     self.model_name,
                     self.model_path.display(),
                     self.model_name

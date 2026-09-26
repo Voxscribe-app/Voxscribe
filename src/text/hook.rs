@@ -18,9 +18,9 @@ pub async fn run(command: &str, text: &str, timeout: Duration, ctx: HookContext<
     let mut child = match Command::new("sh")
         .arg("-c")
         .arg(command)
-        .env("DUSKR_BACKEND", ctx.backend)
-        .env("DUSKR_MODEL", ctx.model)
-        .env("DUSKR_LANGUAGE", ctx.language)
+        .env("VOXSCRIBE_BACKEND", ctx.backend)
+        .env("VOXSCRIBE_MODEL", ctx.model)
+        .env("VOXSCRIBE_LANGUAGE", ctx.language)
         .env("HYPRWHSPR_BACKEND", ctx.backend)
         .env("HYPRWHSPR_MODEL", ctx.model)
         .stdin(Stdio::piped())
@@ -109,7 +109,7 @@ mod tests {
     #[tokio::test]
     async fn hook_environment_exposes_backend_and_model() {
         let out = run(
-            "printf %s \"$DUSKR_BACKEND/$DUSKR_MODEL\"",
+            "printf %s \"$VOXSCRIBE_BACKEND/$VOXSCRIBE_MODEL\"",
             "x",
             Duration::from_secs(5),
             ctx(),

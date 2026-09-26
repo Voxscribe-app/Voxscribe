@@ -24,7 +24,7 @@
 token
 secrets.toml
 
-# Backups written by `duskr migrate`
+# Backups written by `voxscribe migrate`
 *.bak
 *.bak-*
 

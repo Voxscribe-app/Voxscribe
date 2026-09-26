@@ -12,7 +12,7 @@ use crate::ipc::{self, Request, Response};
 
 #[derive(Parser)]
 #[command(
-    name = "duskr",
+    name = "voxscribe",
     version,
     about = "System-wide speech-to-text for Linux"
 )]
@@ -237,7 +237,7 @@ async fn run_with(cli: Cli) -> Result<()> {
     }
 }
 
-/// `duskr` on its own: set the machine up the first time, otherwise the help.
+/// `voxscribe` on its own: set the machine up the first time, otherwise the help.
 async fn bare() -> Result<()> {
     if paths::config_file().exists() {
         Cli::command().print_help()?;
@@ -245,7 +245,7 @@ async fn bare() -> Result<()> {
         return Ok(());
     }
     crate::core::firstrun::ensure().await?;
-    println!("run `duskr daemon` to start, or `duskr service enable` to start it at login");
+    println!("run `voxscribe daemon` to start, or `voxscribe service enable` to start it at login");
     Ok(())
 }
 
@@ -350,7 +350,7 @@ async fn model(command: ModelCommand) -> Result<()> {
         }
         ModelCommand::Download { name, force } => {
             if !crate::models::is_catalog_model(&name) {
-                bail!("unknown model '{name}'; run `duskr model catalog`");
+                bail!("unknown model '{name}'; run `voxscribe model catalog`");
             }
             let mut last_percent = u64::MAX;
             let path = crate::models::download::download(
@@ -768,7 +768,7 @@ pub async fn wait_for_daemon(timeout: Duration) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     bail!(
-        "Duskr daemon did not start within {} seconds",
+        "Voxscribe daemon did not start within {} seconds",
         timeout.as_secs()
     )
 }
@@ -780,14 +780,14 @@ mod tests {
     #[test]
     fn required_commands_parse() {
         for args in [
-            vec!["duskr"],
-            vec!["duskr", "toggle"],
-            vec!["duskr", "toggle", "--language", "fr"],
-            vec!["duskr", "model", "directory"],
-            vec!["duskr", "model", "add", "/tmp/model.bin"],
-            vec!["duskr", "config", "set-model", "medium.en"],
-            vec!["duskr", "migrate", "hyprwhspr", "--no-start"],
-            vec!["duskr", "quickshell", "watch"],
+            vec!["voxscribe"],
+            vec!["voxscribe", "toggle"],
+            vec!["voxscribe", "toggle", "--language", "fr"],
+            vec!["voxscribe", "model", "directory"],
+            vec!["voxscribe", "model", "add", "/tmp/model.bin"],
+            vec!["voxscribe", "config", "set-model", "medium.en"],
+            vec!["voxscribe", "migrate", "hyprwhspr", "--no-start"],
+            vec!["voxscribe", "quickshell", "watch"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok());
         }
@@ -796,11 +796,11 @@ mod tests {
     #[test]
     fn retired_commands_are_gone() {
         for args in [
-            vec!["duskr", "start"],
-            vec!["duskr", "stop"],
-            vec!["duskr", "quickshell", "status"],
-            vec!["duskr", "quickshell", "audio-level"],
-            vec!["duskr", "config", "set-backend", "whisper"],
+            vec!["voxscribe", "start"],
+            vec!["voxscribe", "stop"],
+            vec!["voxscribe", "quickshell", "status"],
+            vec!["voxscribe", "quickshell", "audio-level"],
+            vec!["voxscribe", "config", "set-backend", "whisper"],
         ] {
             assert!(Cli::try_parse_from(args).is_err());
         }
@@ -808,6 +808,6 @@ mod tests {
 
     #[test]
     fn model_move_requires_a_destination() {
-        assert!(Cli::try_parse_from(["duskr", "model", "directory", "--move-models"]).is_err());
+        assert!(Cli::try_parse_from(["voxscribe", "model", "directory", "--move-models"]).is_err());
     }
 }

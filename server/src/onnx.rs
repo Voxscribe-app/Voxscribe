@@ -38,7 +38,7 @@ impl Provider {
 pub fn default_model_dir() -> Result<PathBuf> {
     Ok(dirs::data_dir()
         .context("XDG data directory is unavailable")?
-        .join("duskr/server/models")
+        .join("voxscribe/server/models")
         .join(MODEL_NAME))
 }
 
@@ -141,7 +141,8 @@ mod tests {
 
     #[test]
     fn model_layout_is_checked() {
-        let path = std::env::temp_dir().join(format!("duskr-server-test-{}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("voxscribe-server-test-{}", std::process::id()));
         std::fs::create_dir_all(&path).unwrap();
         assert!(validate_model_dir(&path).is_err());
         for name in MODEL_FILES {

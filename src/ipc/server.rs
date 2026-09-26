@@ -30,7 +30,7 @@ impl Server {
         if path.exists() {
             if is_live(path) {
                 anyhow::bail!(
-                    "another Duskr daemon is already listening on {}",
+                    "another Voxscribe daemon is already listening on {}",
                     path.display()
                 );
             }
@@ -199,7 +199,7 @@ mod tests {
         StateHandle,
         broadcast::Sender<()>,
     ) {
-        let path = dir.path().join("duskr.sock");
+        let path = dir.path().join("voxscribe.sock");
         let server = Server::bind(&path).unwrap();
         let (tx, rx) = mpsc::channel(8);
         let state = StateHandle::new(Snapshot::default());
@@ -298,7 +298,7 @@ mod tests {
     #[tokio::test]
     async fn a_stale_socket_file_is_replaced() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("duskr.sock");
+        let path = dir.path().join("voxscribe.sock");
         std::fs::write(&path, b"").unwrap();
         assert!(Server::bind(&path).is_ok());
     }

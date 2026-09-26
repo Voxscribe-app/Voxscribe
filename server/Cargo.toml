@@ -1,9 +1,9 @@
 [package]
-name = "duskr-server"
+name = "voxscribe-server"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-description = "Remote Parakeet server for Duskr"
+description = "Remote Parakeet server for Voxscribe"
 license = "MIT"
 
 [dependencies]

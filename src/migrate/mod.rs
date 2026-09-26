@@ -125,7 +125,7 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
     }
     if as_bool(get("use_hypr_bindings")) == Some(true) {
         notes.push(Note::Warning(
-            "use_hypr_bindings was set: Duskr reads evdev directly on every \
+            "use_hypr_bindings was set: Voxscribe reads evdev directly on every \
              compositor. Its own shortcuts are active - remove the Hyprland \
              bindings, or clear shortcuts.primary to keep using them."
                 .into(),
@@ -240,7 +240,7 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
         }
         _ => {
             notes.push(Note::Warning(format!(
-                "backend '{backend_raw}' has no Duskr equivalent; keeping '{}'",
+                "backend '{backend_raw}' has no Voxscribe equivalent; keeping '{}'",
                 config.asr.backend
             )));
         }
@@ -309,7 +309,7 @@ pub fn translate(source: &Value, base: Config) -> (Config, Vec<Note>) {
     if let Some(mode) = as_str(get("inject_mode")) {
         notes.push(Note::Dropped {
             key: format!("inject_mode = {mode}"),
-            reason: "Duskr types on a virtual keyboard instead of using wtype/ydotool".into(),
+            reason: "Voxscribe types on a virtual keyboard instead of using wtype/ydotool".into(),
         });
     }
     for key in [
@@ -451,7 +451,7 @@ pub async fn run_hyprwhspr(options: Options) -> Result<Report> {
     let source_path = hyprwhspr_config_path();
     let source = read_hyprwhspr_config(&source_path)?;
     let config_path = paths::config_file();
-    let base = Config::load().context("loading the existing Duskr configuration")?;
+    let base = Config::load().context("loading the existing Voxscribe configuration")?;
     let (mut config, mut notes) = translate(&source, base);
 
     let config_backup = backup(&config_path)?;
@@ -511,22 +511,22 @@ pub async fn run_hyprwhspr(options: Options) -> Result<Report> {
             {
                 Ok(_) => notes.push(Note::Mapped {
                     from: "hyprwhspr.service".into(),
-                    to: "disabled after Duskr startup".into(),
+                    to: "disabled after Voxscribe startup".into(),
                 }),
                 Err(error) => notes.push(Note::Warning(format!(
-                    "Duskr started, but hyprwhspr.service could not be disabled: {error}"
+                    "Voxscribe started, but hyprwhspr.service could not be disabled: {error}"
                 ))),
             }
         }
     } else {
         if options.disable_hyprwhspr {
             notes.push(Note::Warning(
-                "HyprWhspr was kept enabled because Duskr startup was skipped".into(),
+                "HyprWhspr was kept enabled because Voxscribe startup was skipped".into(),
             ));
         }
         if options.migrate_quickshell {
             notes.push(Note::Warning(
-                "Quickshell was not changed because Duskr startup was skipped".into(),
+                "Quickshell was not changed because Voxscribe startup was skipped".into(),
             ));
         }
     }
@@ -625,7 +625,7 @@ mod tests {
     #[test]
     fn text_processing_settings_carry_across() {
         let (config, _) = migrate(json!({
-            "word_overrides": { "hyper whisper": "duskr" },
+            "word_overrides": { "hyper whisper": "voxscribe" },
             "filter_filler_words": true,
             "filler_words": ["uh", "erm"],
             "symbol_replacements": false,
@@ -634,7 +634,7 @@ mod tests {
         }));
         assert_eq!(
             config.text.word_overrides.get("hyper whisper").unwrap(),
-            "duskr"
+            "voxscribe"
         );
         assert!(config.text.filter_filler_words);
         assert_eq!(config.text.filler_words, vec!["uh", "erm"]);

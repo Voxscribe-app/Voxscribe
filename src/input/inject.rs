@@ -111,7 +111,7 @@ impl Injector {
             anyhow::bail!(reason);
         }
         let keyboard = VirtualKeyboard::open(Duration::from_micros(config.input.key_delay_us))
-            .context("creating the Duskr virtual keyboard")?;
+            .context("creating the Voxscribe virtual keyboard")?;
         Ok(Self {
             keyboard: Arc::new(Mutex::new(keyboard)),
             restore_clipboard: config.input.restore_clipboard,

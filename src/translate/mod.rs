@@ -96,7 +96,12 @@ async fn request_gtx(text: &str, source: &str, target: &str, timeout: Duration) 
         .timeout(timeout)
         .build()?
         .post(GTX_URL)
-        .query(&[("client", "gtx"), ("sl", source), ("tl", target), ("dt", "t")])
+        .query(&[
+            ("client", "gtx"),
+            ("sl", source),
+            ("tl", target),
+            ("dt", "t"),
+        ])
         .form(&[("q", text)])
         .send()
         .await?
@@ -180,7 +185,10 @@ mod tests {
     #[test]
     fn gtx_segments_are_joined_in_order() {
         let body = serde_json::json!([
-            [["Hola. ", "Hello there. ", null, null, 10], ["¿Cómo estás?", "How are you?"]],
+            [
+                ["Hola. ", "Hello there. ", null, null, 10],
+                ["¿Cómo estás?", "How are you?"]
+            ],
             null,
             "en"
         ]);

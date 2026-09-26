@@ -3,7 +3,7 @@ import Quickshell
 import Quickshell.Io
 import ".."
 
-// Drop-in replacement for the hyprwhspr service, installed by `duskr migrate
+// Drop-in replacement for the hyprwhspr service, installed by `voxscribe migrate
 // hyprwhspr`. The original is backed up first.
 Item {
     id: service
@@ -12,7 +12,7 @@ Item {
 
     property bool available: false
     property string state: "stopped"
-    property string tooltip: "Duskr is unavailable"
+    property string tooltip: "Voxscribe is unavailable"
     property real level: 0
     property bool levelActive: false
 
@@ -24,12 +24,12 @@ Item {
         if (actionProcess.running)
             return
         if (action === "restart") {
-            actionProcess.command = ["systemctl", "--user", "restart", "duskr.service"]
+            actionProcess.command = ["systemctl", "--user", "restart", "voxscribe.service"]
         } else if (action === "record" || action === "toggle"
                    || action === "start" || action === "stop") {
-            actionProcess.command = ["duskr", "toggle"]
+            actionProcess.command = ["voxscribe", "toggle"]
         } else if (action === "cancel") {
-            actionProcess.command = ["duskr", "cancel"]
+            actionProcess.command = ["voxscribe", "cancel"]
         } else {
             return
         }
@@ -66,13 +66,13 @@ Item {
     Process {
         id: watcher
         running: true
-        command: ["duskr", "quickshell", "watch"]
+        command: ["voxscribe", "quickshell", "watch"]
         stdout: SplitParser { onRead: line => service.applyLine(line) }
         onExited: {
             service.available = false
             service.ready = false
             service.state = "stopped"
-            service.tooltip = "Duskr is unavailable"
+            service.tooltip = "Voxscribe is unavailable"
             service.level = 0
             service.levelActive = false
             retryTimer.start()
